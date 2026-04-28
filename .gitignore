@@ -58,3 +58,5 @@ coverage/
 axl/
 logs/
 keys/
+settler/.venv/
+.env
