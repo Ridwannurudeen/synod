@@ -123,14 +123,14 @@ if ! kill -0 "${PID_SET_B}" 2>/dev/null; then
 fi
 
 QUESTION='Was the Bitcoin genesis block mined on January 3, 2009?'
-echo "[4/5] injecting question to BOTH settlers..."
+echo "[4/5] injecting question to settler A ONLY (auto-propagates to B over AXL)..."
 echo "      prompt: ${QUESTION}"
 
 (
   cd "${SETTLER_DIR}" && \
   "${PY}" tools/inject_question.py \
     --axl http://127.0.0.1:9002 \
-    --target-pubkey "${PUB_A},${PUB_B}" \
+    --target-pubkey "${PUB_A}" \
     --prompt "${QUESTION}" \
     --outcomes 0,1 \
     --deadline-secs 120

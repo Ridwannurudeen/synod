@@ -153,7 +153,12 @@ class SettlerAgent:
         logger.info("question %s prompt=%s", q.question_id[:16], q.prompt[:80])
         self._questions[q.question_id] = QuestionState(question=q)
 
-        # 1) run inference locally
+        # 1) propagate question to peers we haven't received it from. Dedup by
+        # question_id (above) prevents loops — peers that already have the
+        # question will no-op when they receive it.
+        self._propagate_question(q)
+
+        # 2) run inference locally
         result = self.provider.infer(q.prompt, q.outcomes)
         logger.info(
             "inference q=%s outcome=%d confidence=%.3f model=%s",
@@ -163,7 +168,7 @@ class SettlerAgent:
             result.model_tag,
         )
 
-        # 2) build, sign, store, broadcast our own vote
+        # 3) build, sign, store, broadcast our own vote
         vote = SettlementVote.new(
             question_id=q.question_id,
             settler_pubkey=self.identity.public_key_hex,
@@ -240,6 +245,23 @@ class SettlerAgent:
                 logger.info("broadcast vote to %s", pk[:16])
             except Exception as e:
                 logger.warning("broadcast to %s failed: %s", pk[:16], e)
+
+    def _propagate_question(self, q: QuestionAnnouncement) -> None:
+        """Forward a freshly-seen question to every configured peer.
+
+        Loop prevention is handled by the question_id dedup check at the top
+        of `_handle_question`: when peers receive a question they already
+        have, they no-op without re-broadcasting.
+        """
+        if not self.peer_pubkeys:
+            return
+        body = canonical_json(q.to_dict())
+        for pk in self.peer_pubkeys:
+            try:
+                self.axl.send(pk, body)
+                logger.info("propagated question %s to %s", q.question_id[:16], pk[:16])
+            except Exception as e:
+                logger.warning("propagation to %s failed: %s", pk[:16], e)
 
     def _maybe_emit_consensus(self, question_id: str) -> None:
         state = self._questions.get(question_id)
