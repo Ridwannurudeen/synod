@@ -1,0 +1,7 @@
+{
+  "PrivateKeyPath": "../../keys/node-local.pem",
+  "Peers": ["tls://75.119.153.252:9001"],
+  "Listen": [],
+  "api_port": 9022,
+  "tcp_port": 7000
+}

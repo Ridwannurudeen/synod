@@ -62,19 +62,35 @@ NODE_B_KEY=$(curl -fsS http://127.0.0.1:9012/topology | python -c "import sys,js
 echo "node A pubkey: ${NODE_A_KEY}"
 echo "node B pubkey: ${NODE_B_KEY}"
 
-# Give the mesh a moment to peer
-sleep 3
+# Give the mesh time to peer and Yggdrasil to compute routes
+echo "waiting for mesh routes to converge..."
+sleep 10
 
 PAYLOAD="hello from node B at $(date -u +%FT%TZ)"
 echo "sending: ${PAYLOAD}"
-curl -fsS -X POST "http://127.0.0.1:9012/send" \
-  -H "X-Destination-Peer-Id: ${NODE_A_KEY}" \
-  -d "${PAYLOAD}"
-echo
+
+SENT=0
+for attempt in $(seq 1 20); do
+  if curl -fsS -X POST "http://127.0.0.1:9012/send" \
+       -H "X-Destination-Peer-Id: ${NODE_A_KEY}" \
+       -d "${PAYLOAD}" -o /tmp/axl-send.log 2>/dev/null; then
+    echo "send accepted on attempt ${attempt}"
+    SENT=1
+    break
+  fi
+  sleep 2
+done
+
+if [[ "${SENT}" -ne 1 ]]; then
+  echo "error: /send kept failing after retries" >&2
+  echo "--- node-a.log tail ---" >&2; tail -30 "${ROOT_DIR}/logs/node-a.log" >&2 || true
+  echo "--- node-b.log tail ---" >&2; tail -30 "${ROOT_DIR}/logs/node-b.log" >&2 || true
+  exit 1
+fi
 
 # Poll for receipt on node A
 echo "polling node A for incoming message..."
-for _ in $(seq 1 10); do
+for _ in $(seq 1 30); do
   RESP=$(curl -fsS "http://127.0.0.1:9002/recv" 2>/dev/null || true)
   if [[ -n "${RESP}" && "${RESP}" != "null" ]]; then
     echo "RECEIVED: ${RESP}"
