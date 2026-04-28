@@ -60,3 +60,7 @@ logs/
 keys/
 settler/.venv/
 .env
+contracts/lib/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
