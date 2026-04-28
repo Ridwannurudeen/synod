@@ -1,0 +1,57 @@
+# Secrets & keys — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+private*.pem
+*.key
+
+# AXL node configs (contain peer keys, ports)
+axl/node-config*.json
+!axl/node-config.example.json
+
+# Build artifacts
+node_modules/
+dist/
+build/
+out/
+.next/
+target/
+
+# Go
+*.exe
+/node
+/synod-node
+vendor/
+
+# Logs & runtime
+*.log
+logs/
+*.pid
+*.sock
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Coverage / test
+coverage/
+.nyc_output/
+*.cover
+.pytest_cache/
+
+# Lockfiles we want to ignore in subdirectories (keep top-level)
+**/package-lock.json.bak
