@@ -38,7 +38,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--target-pubkey",
         required=True,
-        help="Destination settler pubkey (64-char hex)",
+        help=(
+            "Destination settler pubkey(s); comma-separated for multi-target "
+            "broadcast"
+        ),
     )
     p.add_argument("--prompt", required=True, help="Resolution prompt for the market")
     p.add_argument(
@@ -74,14 +77,17 @@ def main() -> int:
     )
     body = canonical_json(q.to_dict())
 
-    with AxlClient(args.axl) as axl:
-        sent = axl.send(args.target_pubkey, body)
+    targets = [t.strip() for t in args.target_pubkey.split(",") if t.strip()]
 
     print(f"injected question {qid}")
-    print(f"  target:    {args.target_pubkey}")
     print(f"  outcomes:  {outcomes}")
     print(f"  deadline:  {deadline} ({time.strftime('%FT%TZ', time.gmtime(deadline))})")
-    print(f"  sent_bytes: {sent}")
+    print(f"  targets:   {len(targets)}")
+
+    with AxlClient(args.axl) as axl:
+        for target in targets:
+            sent = axl.send(target, body)
+            print(f"  -> {target[:16]}…  ({sent} bytes)")
     return 0
 
 

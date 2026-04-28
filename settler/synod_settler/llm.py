@@ -100,9 +100,16 @@ class LLMProvider(ABC):
 
 
 class AnthropicProvider(LLMProvider):
-    """Claude via the official Anthropic SDK."""
+    """Claude via the official Anthropic SDK.
 
-    DEFAULT_MODEL = "claude-opus-4-7"
+    Defaults to Sonnet 4.6 because settlement is a structured-output task
+    (JSON with three fields) where Sonnet quality is indistinguishable from
+    Opus, and Sonnet is roughly 5x cheaper. Override via SYNOD_MODEL when
+    recording the final demo if you want every model in the network to be the
+    most capable variant.
+    """
+
+    DEFAULT_MODEL = "claude-sonnet-4-6"
 
     def __init__(self, *, model: str | None = None, api_key: str | None = None) -> None:
         from anthropic import Anthropic  # local import keeps OpenAI/Gemini optional
