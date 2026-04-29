@@ -98,6 +98,10 @@ class OnchainClient:
         qid = question_id_to_bytes32(question_id_hex)
         return bool(self.registry.functions.isSettled(qid).call())
 
+    def is_axl_pubkey_registered(self, pubkey_hex: str) -> bool:
+        raw = question_id_to_bytes32(pubkey_hex)
+        return bool(self.registry.functions.registeredAxlPubKeys(raw).call())
+
     def submit_settlement(
         self,
         *,
@@ -158,9 +162,16 @@ def is_designated_poster(my_pubkey: str, voter_pubkeys: list[str]) -> bool:
     return my_pubkey.lower() == min(p.lower() for p in voter_pubkeys)
 
 
-def votes_payload_for_chain(votes: list[dict[str, Any]]) -> bytes:
-    """Canonical-JSON encoding of the bundle of signed votes for on-chain storage."""
-    return canonical_json({"votes": votes})
+def votes_payload_for_chain(
+    votes: list[dict[str, Any]],
+    *,
+    question: dict[str, Any] | None = None,
+) -> bytes:
+    """Canonical-JSON encoding of the signed-vote proof for on-chain storage."""
+    payload: dict[str, Any] = {"protocol_version": 1, "votes": votes}
+    if question is not None:
+        payload["question"] = question
+    return canonical_json(payload)
 
 
 def weighted_score_to_scaled(score: float, scale: int = 1_000_000) -> int:

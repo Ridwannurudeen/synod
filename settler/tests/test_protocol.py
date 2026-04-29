@@ -58,11 +58,19 @@ def test_question_announcement_roundtrip():
     assert d["kind"] == 1
     assert d["question_id"] == "ab" * 32
     assert d["outcomes"] == [0, 1]
+    assert len(q.prompt_hash) == 64
+    assert len(q.outcomes_hash) == 64
 
 
 def test_vote_signature_verifies(tmp_identity: Identity):
-    vote = SettlementVote.new(
+    q = QuestionAnnouncement.new(
         question_id="cd" * 32,
+        prompt="Will protocol X reach $100M TVL by EOY?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    vote = SettlementVote.new(
+        question=q,
         settler_pubkey=tmp_identity.public_key_hex,
         model_tag="claude-opus-4-7",
         outcome=1,
@@ -75,8 +83,14 @@ def test_vote_signature_verifies(tmp_identity: Identity):
 
 
 def test_vote_signature_fails_on_tamper(tmp_identity: Identity):
-    vote = SettlementVote.new(
+    q = QuestionAnnouncement.new(
         question_id="cd" * 32,
+        prompt="Will protocol X reach $100M TVL by EOY?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    vote = SettlementVote.new(
+        question=q,
         settler_pubkey=tmp_identity.public_key_hex,
         model_tag="claude-opus-4-7",
         outcome=1,
@@ -86,7 +100,7 @@ def test_vote_signature_fails_on_tamper(tmp_identity: Identity):
     sig = tmp_identity.sign(vote.signing_payload())
 
     tampered = SettlementVote.new(
-        question_id="cd" * 32,
+        question=q,
         settler_pubkey=tmp_identity.public_key_hex,
         model_tag="claude-opus-4-7",
         outcome=0,  # flipped
@@ -99,8 +113,14 @@ def test_vote_signature_fails_on_tamper(tmp_identity: Identity):
 
 
 def test_vote_signature_fails_with_wrong_key(tmp_identity: Identity, tmp_path: Path):
-    vote = SettlementVote.new(
+    q = QuestionAnnouncement.new(
         question_id="cd" * 32,
+        prompt="Will protocol X reach $100M TVL by EOY?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    vote = SettlementVote.new(
+        question=q,
         settler_pubkey=tmp_identity.public_key_hex,
         model_tag="claude-opus-4-7",
         outcome=1,
@@ -125,9 +145,15 @@ def test_vote_signature_fails_with_wrong_key(tmp_identity: Identity, tmp_path: P
 
 
 def test_confidence_out_of_range_raises():
+    q = QuestionAnnouncement.new(
+        question_id="ee" * 32,
+        prompt="Question?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
     with pytest.raises(ValueError):
         SettlementVote.new(
-            question_id="ee" * 32,
+            question=q,
             settler_pubkey="aa" * 32,
             model_tag="x",
             outcome=0,

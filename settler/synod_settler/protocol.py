@@ -11,6 +11,7 @@ are deterministic across settler implementations.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from enum import IntEnum
@@ -18,6 +19,8 @@ from typing import Any
 
 
 CANONICAL_JSON_SEPARATORS = (",", ":")
+PROTOCOL_VERSION = 1
+HEX_CHARS = frozenset("0123456789abcdef")
 
 
 class MessageKind(IntEnum):
@@ -39,6 +42,30 @@ def canonical_json(obj: Any) -> bytes:
         separators=CANONICAL_JSON_SEPARATORS,
         ensure_ascii=False,
     ).encode("utf-8")
+
+
+def canonical_sha256_hex(obj: Any) -> str:
+    """SHA-256 over the canonical JSON encoding of `obj`."""
+    return hashlib.sha256(canonical_json(obj)).hexdigest()
+
+
+def text_sha256_hex(text: str) -> str:
+    """SHA-256 over UTF-8 text."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def validate_hex32(value: str, *, field: str) -> str:
+    """Return a lower-case 32-byte hex string or raise ValueError."""
+    lowered = value.strip().lower()
+    if len(lowered) != 64 or any(ch not in HEX_CHARS for ch in lowered):
+        raise ValueError(f"{field} must be a 64-character hex string")
+    try:
+        raw = bytes.fromhex(lowered)
+    except ValueError as e:
+        raise ValueError(f"{field} must be hex") from e
+    if len(raw) != 32:
+        raise ValueError(f"{field} must be 32 bytes, got {len(raw)}")
+    return lowered
 
 
 @dataclass(frozen=True)
@@ -65,6 +92,11 @@ class QuestionAnnouncement:
         outcomes: list[int],
         deadline: int,
     ) -> QuestionAnnouncement:
+        question_id = validate_hex32(question_id, field="question_id")
+        if len(outcomes) < 2:
+            raise ValueError("question must have at least two outcomes")
+        if len(set(outcomes)) != len(outcomes):
+            raise ValueError("question outcomes must be unique")
         return cls(
             kind=int(MessageKind.QUESTION),
             question_id=question_id,
@@ -82,6 +114,24 @@ class QuestionAnnouncement:
             "deadline": self.deadline,
         }
 
+    @property
+    def prompt_hash(self) -> str:
+        return text_sha256_hex(self.prompt)
+
+    @property
+    def outcomes_hash(self) -> str:
+        return canonical_sha256_hex(list(self.outcomes))
+
+    def domain_fields(self) -> dict[str, Any]:
+        """Fields that bind a vote to this exact question domain."""
+        return {
+            "protocol_version": PROTOCOL_VERSION,
+            "question_id": self.question_id,
+            "prompt_hash": self.prompt_hash,
+            "outcomes_hash": self.outcomes_hash,
+            "deadline": self.deadline,
+        }
+
 
 @dataclass(frozen=True)
 class SettlementVote:
@@ -95,7 +145,11 @@ class SettlementVote:
     """
 
     kind: int
+    protocol_version: int
     question_id: str
+    prompt_hash: str
+    outcomes_hash: str
+    deadline: int
     settler_pubkey: str  # 64-char hex (ed25519 raw pubkey)
     model_tag: str
     outcome: int
@@ -105,7 +159,7 @@ class SettlementVote:
     @classmethod
     def new(
         cls,
-        question_id: str,
+        question: QuestionAnnouncement,
         settler_pubkey: str,
         model_tag: str,
         outcome: int,
@@ -114,9 +168,16 @@ class SettlementVote:
     ) -> SettlementVote:
         if not (0.0 <= confidence <= 1.0):
             raise ValueError(f"confidence out of range: {confidence}")
+        if outcome not in question.outcomes:
+            raise ValueError(f"outcome {outcome} not in valid set {question.outcomes}")
+        settler_pubkey = validate_hex32(settler_pubkey, field="settler_pubkey")
         return cls(
             kind=int(MessageKind.VOTE),
-            question_id=question_id,
+            protocol_version=PROTOCOL_VERSION,
+            question_id=question.question_id,
+            prompt_hash=question.prompt_hash,
+            outcomes_hash=question.outcomes_hash,
+            deadline=question.deadline,
             settler_pubkey=settler_pubkey,
             model_tag=model_tag,
             outcome=outcome,
@@ -129,7 +190,11 @@ class SettlementVote:
         return canonical_json(
             {
                 "kind": self.kind,
+                "protocol_version": self.protocol_version,
                 "question_id": self.question_id,
+                "prompt_hash": self.prompt_hash,
+                "outcomes_hash": self.outcomes_hash,
+                "deadline": self.deadline,
                 "settler_pubkey": self.settler_pubkey,
                 "model_tag": self.model_tag,
                 "outcome": self.outcome,
@@ -144,7 +209,11 @@ class SettlementVote:
         """Wire-format payload including the signature and optional reasoning."""
         out: dict[str, Any] = {
             "kind": self.kind,
+            "protocol_version": self.protocol_version,
             "question_id": self.question_id,
+            "prompt_hash": self.prompt_hash,
+            "outcomes_hash": self.outcomes_hash,
+            "deadline": self.deadline,
             "settler_pubkey": self.settler_pubkey,
             "model_tag": self.model_tag,
             "outcome": self.outcome,
