@@ -137,11 +137,17 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10 text-zinc-100">
       <header className="flex flex-col gap-2">
-        <div className="flex items-baseline gap-3">
+        <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="text-3xl font-semibold tracking-tight">Synod</h1>
           <span className="text-sm text-zinc-500">
             decentralized AI settlement for Delphi
           </span>
+          <a
+            href="/network"
+            className="ml-auto rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-emerald-700 hover:text-emerald-300"
+          >
+            AXL mesh →
+          </a>
         </div>
         <p className="max-w-3xl text-sm text-zinc-400">
           Heterogeneous AI models running on independent machines coordinate over

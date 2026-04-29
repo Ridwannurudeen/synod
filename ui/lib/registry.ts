@@ -26,7 +26,7 @@ function validateRegistryConfig(rpc: string | undefined, addr: string | undefine
   return { rpcUrl: rpc, registryAddress: addr as Hex };
 }
 
-function loadConfig(): SynodRegistryConfig | null {
+export function loadConfig(): SynodRegistryConfig | null {
   const envConfig = validateRegistryConfig(
     process.env.SYNOD_RPC_URL,
     process.env.SYNOD_REGISTRY_ADDRESS
