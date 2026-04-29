@@ -18,6 +18,10 @@ PY="${SETTLER_DIR}/.venv/Scripts/python.exe"
 [[ -x "${PY}" ]] || PY="${SETTLER_DIR}/.venv/bin/python"
 
 cd "${ROOT_DIR}"
+CURL_BIN="$(command -v curl.exe 2>/dev/null || command -v curl 2>/dev/null)" || {
+  echo "curl missing"
+  exit 1
+}
 
 # Load the API key out of settler/.env without sourcing the whole file
 # (the file may contain values with spaces that break shell `source`).
@@ -61,13 +65,13 @@ trap cleanup EXIT
 # Wait for both APIs
 for url in http://127.0.0.1:9002 http://127.0.0.1:9012; do
   for _ in $(seq 1 30); do
-    curl -fsS "${url}/topology" >/dev/null 2>&1 && break
+    "${CURL_BIN}" -fsS "${url}/topology" >/dev/null 2>&1 && break
     sleep 1
   done
 done
 
-PUB_A=$(curl -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
-PUB_B=$(curl -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
+PUB_A=$("${CURL_BIN}" -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
+PUB_B=$("${CURL_BIN}" -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
 echo "[2/5] node A pubkey: ${PUB_A}"
 echo "[2/5] node B pubkey: ${PUB_B}"
 
@@ -84,31 +88,29 @@ KEY_B="${ROOT_DIR}/keys/node-b.pem"
 
 echo "[3/5] starting settler A (Anthropic ${SYNOD_MODEL}, identity node-a)..."
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" \
-  SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9002" \
-  SYNOD_IDENTITY_KEY="${KEY_A}" \
-  SYNOD_PEER_KEYS="${PUB_B}" \
-  SYNOD_QUORUM=2 \
-  SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9002" \
+    --identity-key "${KEY_A}" \
+    --peer-keys "${PUB_B}" \
+    --quorum 2 \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-a.log" 2>&1 &
 PID_SET_A=$!
 
 echo "[3/5] starting settler B (Anthropic ${SYNOD_MODEL}, identity node-b)..."
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" \
-  SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9012" \
-  SYNOD_IDENTITY_KEY="${KEY_B}" \
-  SYNOD_PEER_KEYS="${PUB_A}" \
-  SYNOD_QUORUM=2 \
-  SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9012" \
+    --identity-key "${KEY_B}" \
+    --peer-keys "${PUB_A}" \
+    --quorum 2 \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-b.log" 2>&1 &
 PID_SET_B=$!
 

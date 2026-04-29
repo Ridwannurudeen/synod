@@ -372,6 +372,71 @@ export default function HomePage() {
               <code className="text-amber-100">{onchain.chainId ?? "—"}</code>
             </div>
           </div>
+          {onchain.proof && (
+            <div className="mt-5 border-t border-amber-800/50 pt-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-xs font-medium uppercase tracking-widest text-amber-300">
+                  Proof verification
+                </h3>
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider ${
+                    onchain.proof.status === "verified"
+                      ? "border-emerald-600 bg-emerald-950/60 text-emerald-300"
+                      : "border-rose-700 bg-rose-950/60 text-rose-300"
+                  }`}
+                >
+                  {onchain.proof.status}
+                </span>
+              </div>
+              <div className="grid gap-2 text-xs text-zinc-300 sm:grid-cols-3">
+                <span>
+                  winner votes:{" "}
+                  <code>{onchain.proof.winnerVotes ?? "—"}</code>
+                </span>
+                <span>
+                  quorum required:{" "}
+                  <code>{onchain.proof.quorumSize ?? "—"}</code>
+                </span>
+                <span>
+                  recomputed score:{" "}
+                  <code>{onchain.proof.weightedScoreScaled ?? "—"}</code>
+                </span>
+              </div>
+              {onchain.proof.errors.length > 0 && (
+                <ul className="mt-3 space-y-1 text-xs text-rose-300">
+                  {onchain.proof.errors.slice(0, 4).map((err) => (
+                    <li key={err}>{err}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {onchain.proof.votes.map((v) => (
+                  <div
+                    key={v.pubkey}
+                    className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <code className="text-zinc-200">{shortHex(v.pubkey, 8, 6)}</code>
+                      <span
+                        className={
+                          v.registered && v.signatureValid
+                            ? "text-emerald-300"
+                            : "text-rose-300"
+                        }
+                      >
+                        {v.registered && v.signatureValid ? "valid" : "invalid"}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-3 text-zinc-400">
+                      <span>outcome: {v.outcome ?? "—"}</span>
+                      <span>confidence: {v.confidence?.toFixed(3) ?? "—"}</span>
+                      <span>{v.modelTag ?? "model unknown"}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
 

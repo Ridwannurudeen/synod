@@ -69,6 +69,27 @@ export interface OnchainView {
   outcome?: number;
   /** Stored confidence-weighted score scaled by 1e6 on-chain. */
   weightedScoreScaled?: number;
+  /** Server-side verification of the signed-vote proof stored on-chain. */
+  proof?: ProofVerificationView;
+}
+
+export interface ProofVoteView {
+  pubkey: string;
+  modelTag?: string;
+  outcome?: number;
+  confidence?: number;
+  registered: boolean;
+  signatureValid: boolean;
+}
+
+export interface ProofVerificationView {
+  status: "verified" | "invalid" | "unavailable";
+  errors: string[];
+  questionId?: string;
+  quorumSize?: number;
+  winnerVotes?: number;
+  weightedScoreScaled?: number;
+  votes: ProofVoteView[];
 }
 
 export interface DeliberationState {

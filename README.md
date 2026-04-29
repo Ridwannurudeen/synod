@@ -14,9 +14,9 @@ Synod is the missing piece.
 
 ## What Synod does
 
-A network of heterogeneous AI settler nodes, each running a different model (Claude, GPT-4, Gemini, Llama, ...), independently runs inference on a market resolution prompt, signs the answer with its [Gensyn AXL](https://docs.gensyn.ai/tech/agent-exchange-layer) ed25519 identity key, exchanges signed votes over AXL's encrypted P2P mesh, computes confidence-weighted majority consensus, and posts the quorum-signed result on-chain to `SynodRegistry` on Gensyn L2.
+A network of heterogeneous AI settler nodes, each running a different model provider (Anthropic, OpenAI, Gemini, or future open-source adapters), independently runs inference on a market resolution prompt, signs the answer with its [Gensyn AXL](https://docs.gensyn.ai/tech/agent-exchange-layer) ed25519 identity key, exchanges signed votes over AXL's encrypted P2P mesh, computes quorum-gated confidence-weighted consensus, and posts the signed-vote proof on-chain to `SynodRegistry` on Gensyn L2.
 
-The registry stores the full bundle of signed votes as raw bytes. **Anyone** can re-verify the quorum off-chain by reconstructing each vote's canonical-JSON signing payload and checking the ed25519 signature against the settler's registered AXL pubkey.
+The registry anchors the full bundle of signed votes as raw bytes and exposes registered AXL pubkeys. **Anyone** can re-verify the proof off-chain by reconstructing each vote's canonical-JSON signing payload, checking the ed25519 signature against the settler's registered AXL pubkey, and recomputing the winner quorum and weighted score. The live UI performs this verification server-side and shows the result.
 
 ## Architecture
 
@@ -66,12 +66,13 @@ The registry stores the full bundle of signed votes as raw bytes. **Anyone** can
 
 - ✅ AXL multi-node mesh (local + VPS, encrypted P2P, cross-machine round-trip)
 - ✅ Settler agent (LLM inference + ed25519 vote signing + AXL broadcast + consensus)
-- ✅ Quorum-signed `recordSettlement` on a real EVM chain (anvil reference; mainnet config one-line switch)
+- ✅ On-chain proof anchoring via `recordSettlement` on a real EVM chain (anvil reference; mainnet config one-line switch)
 - ✅ Question auto-propagation across the settler mesh
 - ✅ Deterministic designated-poster (no double-submission, no coordination required)
 - ✅ Live deliberation viewer (Next.js)
 - ✅ One-command demo orchestrator
-- ✅ **40 tests green** (13 Python protocol/identity/consensus + 7 Python on-chain helpers + 20 Solidity Foundry incl. 256-run fuzz)
+- ✅ Independent CLI proof verifier (`settler/tools/verify_settlement.py`)
+- ✅ **50 tests green** (25 Python protocol/identity/consensus/on-chain/proof-verifier tests + 25 Solidity Foundry incl. 256-run fuzz)
 
 ## Quick start
 
@@ -82,7 +83,7 @@ Prerequisites: Node 22+, Go 1.25.5+ (auto-fetched via `GOTOOLCHAIN`), Foundry, P
 git clone https://github.com/gensyn-ai/axl
 cd axl && GOTOOLCHAIN=go1.25.5 go build -o ../axl/axl-node ./cmd/node/
 
-# 2. Build SynodRegistry (anvil) + run Foundry tests (20 pass)
+# 2. Build SynodRegistry (anvil) + run Foundry tests (25 pass)
 cd contracts && forge install foundry-rs/forge-std --no-commit && forge test
 
 # 3. Set up the settler runtime
@@ -97,6 +98,29 @@ bash scripts/axl-keygen.sh node-b
 bash tools/demo-up.sh
 ```
 
+### Three-provider judge demo
+
+For the strongest hackathon presentation, run three AXL nodes with three model
+providers. Add these to `settler/.env`:
+
+```bash
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+GOOGLE_API_KEY=...
+```
+
+Then run:
+
+```bash
+bash tools/demo-up-3node.sh
+```
+
+The launcher deploys a fresh local `SynodRegistry`, registers three settlers,
+starts AXL nodes on ports `9002`, `9012`, and `9022`, and starts the UI on
+`http://localhost:3000`. By default quorum is `2 of 3`; set
+`SYNOD_DEMO_QUORUM=3` for strict unanimity. The full judge script is in
+[`docs/judge-demo.md`](./docs/judge-demo.md).
+
 ## Running just the on-chain integration test
 
 Without the UI, to verify the protocol end-to-end on a local chain:
@@ -108,15 +132,26 @@ bash settler/tools/run_onchain_test.sh
 #   ONCHAIN INTEGRATION OK
 ```
 
+To verify a posted settlement without trusting the UI:
+
+```bash
+cd settler
+python tools/verify_settlement.py \
+  --rpc-url http://127.0.0.1:8545 \
+  --registry-address <SynodRegistry> \
+  --question-id <64-hex-question-id>
+# Expected output: Synod proof: VERIFIED
+```
+
 ## Mapping to ETHGlobal judging criteria
 
 | Criterion | What Synod brings |
 |---|---|
-| **Technicality** | Multi-LLM consensus protocol; ed25519-signed canonical-JSON vote payloads; P2P over Yggdrasil mesh; on-chain audit trail; deterministic designated-poster algorithm |
+| **Technicality** | Multi-LLM consensus protocol; ed25519-signed canonical-JSON vote payloads bound to prompt/outcomes/deadline; P2P over Yggdrasil mesh; on-chain proof anchor; server-side and CLI proof verifiers; deterministic designated-poster algorithm |
 | **Originality** | First decentralized AI settlement service. The category does not exist yet — Polymarket has UMA, Augur has REP, Delphi had nothing |
 | **Practicality** | Solves Delphi's actual #1 architectural weakness in week-one of mainnet. Reference implementation Gensyn could integrate as Delphi v2's settler architecture |
 | **Usability (UI/UX/DX)** | Live deliberation viewer; one-command demo orchestrator; gitignored env template; ` forge test` + `pytest` round-trip in seconds |
-| **WOW factor** | Watch heterogeneous AI models on independent machines reach quorum-signed agreement, with the on-chain transaction hash appearing on the same screen |
+| **WOW factor** | Watch heterogeneous AI models on independent machines reach quorum-gated agreement, see the on-chain transaction hash, then watch the UI independently verify every signature in the proof |
 
 ## Gensyn AXL prize submission requirements
 
@@ -131,11 +166,11 @@ bash settler/tools/run_onchain_test.sh
 ## What is new vs reused
 
 **New** (built during hackathon):
-- All Synod settler agent code (Python, ~600 LOC)
+- All Synod settler agent code (Python, ~700 LOC)
 - Synod deliberation protocol & canonical JSON signing
 - `SynodRegistry.sol` + Foundry test suite + deploy script (~470 LOC Solidity)
 - On-chain submission client (web3.py wrapper) + designated-poster algorithm
-- Next.js live deliberation viewer (~700 LOC TS)
+- Next.js live deliberation viewer + proof verifier (~900 LOC TS)
 - One-command demo orchestrator
 - Architecture spec, AI usage disclosure
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -35,6 +36,7 @@ from .protocol import (
     QuestionAnnouncement,
     SettlementVote,
     canonical_json,
+    validate_hex32,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,9 +85,15 @@ class SettlerAgent:
         self.axl = axl
         self.provider = provider
         # Don't broadcast to ourselves
-        self.peer_pubkeys = [
-            p.lower() for p in peer_pubkeys if p.lower() != identity.public_key_hex
-        ]
+        self.peer_pubkeys = []
+        for p in peer_pubkeys:
+            try:
+                normalized = validate_hex32(p, field="peer_pubkey")
+            except ValueError:
+                logger.warning("ignoring invalid peer pubkey: %s", p)
+                continue
+            if normalized != identity.public_key_hex:
+                self.peer_pubkeys.append(normalized)
         self.quorum = quorum
         self.poll_interval_s = poll_interval_s
         self.on_consensus = on_consensus
@@ -99,7 +107,7 @@ class SettlerAgent:
         """Block on the AXL recv queue and process messages as they arrive."""
         logger.info(
             "settler running pubkey=%s peers=%d quorum=%d",
-            self.identity.public_key_hex[:16],
+            self.identity.public_key_hex,
             len(self.peer_pubkeys),
             self.quorum,
         )
@@ -109,7 +117,11 @@ class SettlerAgent:
 
     def tick(self) -> None:
         """Process at most one inbound AXL message."""
-        msg = self.axl.recv()
+        try:
+            msg = self.axl.recv()
+        except Exception as e:
+            logger.warning("AXL recv failed: %s", e)
+            return
         if msg is None:
             return
         try:
@@ -138,13 +150,16 @@ class SettlerAgent:
 
         kind = int(payload.get("kind", 0))
         if kind == int(MessageKind.QUESTION):
-            q = QuestionAnnouncement(
-                kind=int(payload["kind"]),
-                question_id=str(payload["question_id"]),
-                prompt=str(payload["prompt"]),
-                outcomes=[int(x) for x in payload["outcomes"]],
-                deadline=int(payload["deadline"]),
-            )
+            try:
+                q = QuestionAnnouncement.new(
+                    question_id=str(payload["question_id"]),
+                    prompt=str(payload["prompt"]),
+                    outcomes=[int(x) for x in payload["outcomes"]],
+                    deadline=int(payload["deadline"]),
+                )
+            except (KeyError, TypeError, ValueError) as e:
+                logger.warning("rejecting invalid question from %s: %s", msg.sender_pubkey[:16], e)
+                return
             self._handle_question(q)
         elif kind == int(MessageKind.VOTE):
             self._handle_incoming_vote(payload, msg.sender_pubkey)
@@ -158,7 +173,11 @@ class SettlerAgent:
         if q.deadline < int(time.time()):
             logger.warning("question %s already past deadline", q.question_id)
             return
-        logger.info("question %s prompt=%s", q.question_id[:16], q.prompt[:80])
+        if len(q.prompt) > 4096:
+            logger.warning("question %s prompt too long", q.question_id[:16])
+            return
+        outcomes = ",".join(str(x) for x in q.outcomes)
+        logger.info("question %s outcomes=%s prompt=%s", q.question_id, outcomes, q.prompt[:80])
         self._questions[q.question_id] = QuestionState(question=q)
 
         # 1) propagate question to peers we haven't received it from. Dedup by
@@ -170,7 +189,7 @@ class SettlerAgent:
         result = self.provider.infer(q.prompt, q.outcomes)
         logger.info(
             "inference q=%s outcome=%d confidence=%.3f model=%s",
-            q.question_id[:16],
+            q.question_id,
             result.outcome,
             result.confidence,
             result.model_tag,
@@ -178,7 +197,7 @@ class SettlerAgent:
 
         # 3) build, sign, store, broadcast our own vote
         vote = SettlementVote.new(
-            question_id=q.question_id,
+            question=q,
             settler_pubkey=self.identity.public_key_hex,
             model_tag=result.model_tag,
             outcome=result.outcome,
@@ -209,17 +228,99 @@ class SettlerAgent:
             return
 
         signature_hex = str(payload.get("signature", ""))
-        settler_pubkey = str(payload.get("settler_pubkey", "")).lower()
+        try:
+            settler_pubkey = validate_hex32(
+                str(payload.get("settler_pubkey", "")), field="settler_pubkey"
+            )
+        except ValueError:
+            logger.warning("rejecting vote with invalid settler pubkey")
+            return
+
+        sender_raw = str(sender_pubkey or "").strip().lower()
+        if sender_raw:
+            try:
+                sender = validate_hex32(sender_raw, field="sender_pubkey")
+                if sender != settler_pubkey:
+                    logger.info(
+                        "AXL sender header %s differs from signed settler %s; "
+                        "using signature and registry auth",
+                        sender,
+                        settler_pubkey,
+                    )
+            except ValueError:
+                logger.info("AXL sender header was not a full pubkey; using signature auth")
+        if settler_pubkey not in self.peer_pubkeys:
+            logger.warning("rejecting vote from unconfigured peer %s", settler_pubkey[:16])
+            return
+        if self.onchain is not None:
+            try:
+                if not self.onchain.is_axl_pubkey_registered(settler_pubkey):
+                    logger.warning(
+                        "rejecting vote from unregistered on-chain AXL pubkey %s",
+                        settler_pubkey[:16],
+                    )
+                    return
+            except Exception as e:
+                logger.warning("could not check on-chain AXL registration: %s", e)
+                return
+
+        now = int(time.time())
+        try:
+            outcome = int(payload["outcome"])
+            confidence = float(payload["confidence"])
+            timestamp = int(payload["timestamp"])
+            protocol_version = int(payload["protocol_version"])
+            prompt_hash = str(payload["prompt_hash"])
+            outcomes_hash = str(payload["outcomes_hash"])
+            deadline = int(payload["deadline"])
+            model_tag = str(payload["model_tag"])
+            kind = int(payload["kind"])
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning("rejecting malformed vote from %s: %s", settler_pubkey[:16], e)
+            return
+        if kind != int(MessageKind.VOTE):
+            logger.warning("rejecting vote with wrong kind=%s", kind)
+            return
+        if protocol_version != 1:
+            logger.warning("rejecting vote with unsupported protocol_version=%s", protocol_version)
+            return
+        if deadline != state.question.deadline:
+            logger.warning("rejecting vote with mismatched deadline from %s", settler_pubkey[:16])
+            return
+        if prompt_hash != state.question.prompt_hash or outcomes_hash != state.question.outcomes_hash:
+            logger.warning("rejecting vote with mismatched question domain from %s", settler_pubkey[:16])
+            return
+        if outcome not in state.question.outcomes:
+            logger.warning("rejecting vote with invalid outcome=%s from %s", outcome, settler_pubkey[:16])
+            return
+        if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            logger.warning("rejecting vote with invalid confidence=%s from %s", confidence, settler_pubkey[:16])
+            return
+        if timestamp > state.question.deadline:
+            logger.warning("rejecting late vote from %s", settler_pubkey[:16])
+            return
+        if timestamp > now + 300:
+            logger.warning("rejecting future-dated vote from %s", settler_pubkey[:16])
+            return
+        existing = state.votes_by_settler.get(settler_pubkey)
+        if existing is not None:
+            if existing.get("signature") != signature_hex:
+                logger.warning("rejecting equivocation from %s", settler_pubkey[:16])
+            return
 
         # The signed payload is the vote without the signature/reasoning fields.
         vote_for_signing = SettlementVote(
-            kind=int(payload["kind"]),
+            kind=kind,
+            protocol_version=protocol_version,
             question_id=question_id,
+            prompt_hash=prompt_hash,
+            outcomes_hash=outcomes_hash,
+            deadline=deadline,
             settler_pubkey=settler_pubkey,
-            model_tag=str(payload["model_tag"]),
-            outcome=int(payload["outcome"]),
-            confidence=float(payload["confidence"]),
-            timestamp=int(payload["timestamp"]),
+            model_tag=model_tag,
+            outcome=outcome,
+            confidence=confidence,
+            timestamp=timestamp,
         )
         if not verify_signature(
             settler_pubkey, vote_for_signing.signing_payload(), signature_hex
@@ -233,9 +334,9 @@ class SettlerAgent:
         state.votes_by_settler[settler_pubkey] = payload
         logger.info(
             "accepted vote q=%s settler=%s outcome=%d (%d/%d)",
-            question_id[:16],
+            question_id,
             settler_pubkey[:16],
-            int(payload["outcome"]),
+            outcome,
             len(state.votes_by_settler),
             self.quorum,
         )
@@ -287,7 +388,7 @@ class SettlerAgent:
         state.consensus_emitted = True
         logger.info(
             "CONSENSUS q=%s outcome=%d quorum=%d weighted_score=%.3f",
-            question_id[:16],
+            question_id,
             outcome.outcome,
             outcome.quorum_size,
             outcome.weighted_score,
@@ -314,11 +415,13 @@ class SettlerAgent:
         """
         if self.onchain is None:
             return
-        voter_pubkeys = [str(v["settler_pubkey"]) for v in votes]
+        voter_pubkeys = [
+            str(v["settler_pubkey"]) for v in votes if int(v["outcome"]) == outcome
+        ]
         if not is_designated_poster(self.identity.public_key_hex, voter_pubkeys):
             logger.info(
                 "not the designated poster for q=%s; another settler will submit",
-                question_id[:16],
+                question_id,
             )
             return
         if self.onchain.is_settled(question_id):
@@ -326,7 +429,8 @@ class SettlerAgent:
                         question_id[:16])
             return
         try:
-            payload = votes_payload_for_chain(votes)
+            state = self._questions[question_id]
+            payload = votes_payload_for_chain(votes, question=state.question.to_dict())
             scaled = weighted_score_to_scaled(weighted_score)
             receipt = self.onchain.submit_settlement(
                 question_id_hex=question_id,

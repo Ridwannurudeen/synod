@@ -13,7 +13,33 @@ CONTRACTS_DIR="${ROOT_DIR}/contracts"
 PY="${SETTLER_DIR}/.venv/Scripts/python.exe"
 [[ -x "${PY}" ]] || PY="${SETTLER_DIR}/.venv/bin/python"
 
-export PATH="/c/Users/HP/.foundry/bin:${PATH}"
+resolve_tool() {
+  local name="$1"
+  local candidate
+  for candidate in "${name}" "${name}.exe"; do
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      command -v "${candidate}"
+      return 0
+    fi
+  done
+  for dir in "/c/Users/HP/.foundry/bin" "/mnt/c/Users/HP/.foundry/bin" "${HOME}/.foundry/bin"; do
+    for candidate in "${dir}/${name}" "${dir}/${name}.exe"; do
+      if [[ -x "${candidate}" ]]; then
+        echo "${candidate}"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+FORGE_BIN="$(resolve_tool forge)" || { echo "forge missing; install Foundry or add it to PATH"; exit 1; }
+CAST_BIN="$(resolve_tool cast)" || { echo "cast missing; install Foundry or add it to PATH"; exit 1; }
+ANVIL_BIN="$(resolve_tool anvil)" || { echo "anvil missing; install Foundry or add it to PATH"; exit 1; }
+CURL_BIN="$(command -v curl.exe 2>/dev/null || command -v curl 2>/dev/null)" || {
+  echo "curl missing"
+  exit 1
+}
 
 cd "${ROOT_DIR}"
 
@@ -43,7 +69,7 @@ pkill -f run_settler.py >/dev/null 2>&1 || true
 sleep 1
 
 echo "[1/8] starting anvil on :${ANVIL_PORT}..."
-anvil --port "${ANVIL_PORT}" --silent > "${ROOT_DIR}/logs/anvil.log" 2>&1 &
+"${ANVIL_BIN}" --port "${ANVIL_PORT}" --silent > "${ROOT_DIR}/logs/anvil.log" 2>&1 &
 PID_ANVIL=$!
 
 cleanup() {
@@ -57,19 +83,19 @@ trap cleanup EXIT
 
 # Wait for anvil RPC
 for _ in $(seq 1 30); do
-  if cast block-number --rpc-url "${RPC_URL}" >/dev/null 2>&1; then break; fi
+  if "${CAST_BIN}" block-number --rpc-url "${RPC_URL}" >/dev/null 2>&1; then break; fi
   sleep 1
 done
 
 echo "[2/8] deploying SynodRegistry to anvil..."
 DEPLOY_OUT=$(cd "${CONTRACTS_DIR}" && \
-  DEPLOYER_PRIVATE_KEY="${ACC0_KEY}" \
-  forge script script/Deploy.s.sol:Deploy \
+  "${FORGE_BIN}" create \
     --rpc-url "${RPC_URL}" \
+    --private-key "${ACC0_KEY}" \
     --broadcast \
-    --skip-simulation \
-    -vvv 2>&1)
-REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "SynodRegistry: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $2}')
+    src/SynodRegistry.sol:SynodRegistry \
+    --constructor-args "${ACC0_ADDR}" 2>&1)
+REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "Deployed to: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $3}')
 if [[ -z "${REG_ADDR}" ]]; then
   echo "ERROR: failed to deploy SynodRegistry" >&2
   echo "${DEPLOY_OUT}" | tail -30 >&2
@@ -85,13 +111,17 @@ PID_AXL_B=$!
 
 for url in "${RPC_URL}" http://127.0.0.1:9002 http://127.0.0.1:9012; do :; done
 for _ in $(seq 1 30); do
-  curl -fsS http://127.0.0.1:9002/topology >/dev/null 2>&1 && \
-  curl -fsS http://127.0.0.1:9012/topology >/dev/null 2>&1 && break
+  "${CURL_BIN}" -fsS http://127.0.0.1:9002/topology >/dev/null 2>&1 && \
+  "${CURL_BIN}" -fsS http://127.0.0.1:9012/topology >/dev/null 2>&1 && break
   sleep 1
 done
 
-PUB_A=$(curl -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
-PUB_B=$(curl -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
+PUB_A=$("${CURL_BIN}" -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
+PUB_B=$("${CURL_BIN}" -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
+if [[ -z "${PUB_A}" || -z "${PUB_B}" ]]; then
+  echo "ERROR: could not read AXL topology" >&2
+  exit 1
+fi
 echo "[3/8] node A pubkey: ${PUB_A}"
 echo "[3/8] node B pubkey: ${PUB_B}"
 
@@ -100,19 +130,19 @@ PUB_A_ARG="0x${PUB_A}"
 PUB_B_ARG="0x${PUB_B}"
 
 echo "[4/8] registering settlers in SynodRegistry..."
-cast send "${REG_ADDR}" \
+"${CAST_BIN}" send "${REG_ADDR}" \
   "registerSettler(address,bytes32,string)" \
   "${ACC1_ADDR}" "${PUB_A_ARG}" "claude-sonnet-4-6-A" \
   --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1 || \
   { echo "ERROR: registerSettler A failed" >&2; exit 1; }
 
-cast send "${REG_ADDR}" \
+"${CAST_BIN}" send "${REG_ADDR}" \
   "registerSettler(address,bytes32,string)" \
   "${ACC2_ADDR}" "${PUB_B_ARG}" "claude-sonnet-4-6-B" \
   --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1 || \
   { echo "ERROR: registerSettler B failed" >&2; exit 1; }
 
-REG_COUNT=$(cast call "${REG_ADDR}" "registeredSettlerCount()(uint256)" --rpc-url "${RPC_URL}")
+REG_COUNT=$("${CAST_BIN}" call "${REG_ADDR}" "registeredSettlerCount()(uint256)" --rpc-url "${RPC_URL}" | tr -d '\r')
 echo "[4/8] registeredSettlerCount: ${REG_COUNT}"
 
 echo "[5/8] waiting for AXL mesh routes..."
@@ -123,37 +153,35 @@ KEY_B="${ROOT_DIR}/keys/node-b.pem"
 
 echo "[6/8] starting settler A (EVM=${ACC1_ADDR}, AXL=${PUB_A:0:16}..)..."
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" \
-  SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9002" \
-  SYNOD_IDENTITY_KEY="${KEY_A}" \
-  SYNOD_PEER_KEYS="${PUB_B}" \
-  SYNOD_QUORUM=2 \
-  SYNOD_RPC_URL="${RPC_URL}" \
-  SYNOD_REGISTRY_ADDRESS="${REG_ADDR}" \
-  SYNOD_EVM_KEY="${ACC1_KEY}" \
-  SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9002" \
+    --identity-key "${KEY_A}" \
+    --peer-keys "${PUB_B}" \
+    --quorum 2 \
+    --rpc-url "${RPC_URL}" \
+    --registry-address "${REG_ADDR}" \
+    --evm-key "${ACC1_KEY}" \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-a.log" 2>&1 &
 PID_SET_A=$!
 
 echo "[6/8] starting settler B (EVM=${ACC2_ADDR}, AXL=${PUB_B:0:16}..)..."
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" \
-  SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9012" \
-  SYNOD_IDENTITY_KEY="${KEY_B}" \
-  SYNOD_PEER_KEYS="${PUB_A}" \
-  SYNOD_QUORUM=2 \
-  SYNOD_RPC_URL="${RPC_URL}" \
-  SYNOD_REGISTRY_ADDRESS="${REG_ADDR}" \
-  SYNOD_EVM_KEY="${ACC2_KEY}" \
-  SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9012" \
+    --identity-key "${KEY_B}" \
+    --peer-keys "${PUB_A}" \
+    --quorum 2 \
+    --rpc-url "${RPC_URL}" \
+    --registry-address "${REG_ADDR}" \
+    --evm-key "${ACC2_KEY}" \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-b.log" 2>&1 &
 PID_SET_B=$!
 
@@ -195,7 +223,7 @@ grep -hE "CONSENSUS |ONCHAIN q=|inference q=|accepted vote q=" \
 
 echo
 echo "=== verifying on-chain state ==="
-SETTLED=$(cast call "${REG_ADDR}" "isSettled(bytes32)(bool)" "0x${QID_HEX}" --rpc-url "${RPC_URL}")
+SETTLED=$("${CAST_BIN}" call "${REG_ADDR}" "isSettled(bytes32)(bool)" "0x${QID_HEX}" --rpc-url "${RPC_URL}")
 echo "isSettled(${QID_HEX:0:16}..): ${SETTLED}"
 
 if [[ "${SETTLED}" != "true" ]]; then
@@ -206,7 +234,7 @@ if [[ "${SETTLED}" != "true" ]]; then
 fi
 
 # Read the full Settlement struct
-SETTLEMENT=$(cast call "${REG_ADDR}" \
+SETTLEMENT=$("${CAST_BIN}" call "${REG_ADDR}" \
   "getSettlement(bytes32)((bytes32,uint8,uint256,uint256,bytes,address,uint256))" \
   "0x${QID_HEX}" --rpc-url "${RPC_URL}")
 echo "Settlement: ${SETTLEMENT}"

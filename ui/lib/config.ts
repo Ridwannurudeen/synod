@@ -8,24 +8,33 @@
 
 import path from "node:path";
 
-const REPO_ROOT = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "..");
+const REPO_ROOT = path.resolve(process.cwd(), "..");
 
 export const SETTLER_LOG_FILES = (
-  process.env.SYNOD_UI_LOG_FILES ?? "logs/settler-a.log,logs/settler-b.log"
+  process.env.SYNOD_UI_LOG_FILES ??
+  "logs/settler-a.log,logs/settler-b.log,logs/settler-c.log"
 )
   .split(",")
   .map((p) => p.trim())
   .filter(Boolean)
-  .map((p) => ({ name: path.basename(p), path: path.resolve(REPO_ROOT, p) }));
+  .map((p) => ({
+    name: path.basename(p),
+    path: path.resolve(/*turbopackIgnore: true*/ REPO_ROOT, p),
+  }));
 
 export const INJECT_QUESTION_PY = path.resolve(
+  /*turbopackIgnore: true*/
   REPO_ROOT,
   process.env.SYNOD_UI_INJECT_PY ?? "settler/tools/inject_question.py"
 );
 
 export const SETTLER_PYTHON =
   process.env.SYNOD_UI_PYTHON ??
-  path.resolve(REPO_ROOT, "settler/.venv/Scripts/python.exe");
+  path.resolve(
+    /*turbopackIgnore: true*/
+    REPO_ROOT,
+    "settler/.venv/Scripts/python.exe"
+  );
 
 export const PRIMARY_AXL_API =
   process.env.SYNOD_UI_AXL_API ?? "http://127.0.0.1:9002";

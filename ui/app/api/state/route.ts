@@ -74,6 +74,7 @@ export async function GET(): Promise<NextResponse> {
       onchain.weightedScoreScaled = Number(summary.settlement.weightedScoreScaled);
       onchain.postedBy = summary.settlement.postedBy;
       onchain.postedAt = Number(summary.settlement.timestamp) * 1000;
+      onchain.proof = summary.proof;
     }
     if (parsed.onchainTxHash) {
       onchain.postedTxHash = `0x${parsed.onchainTxHash}`;

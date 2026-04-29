@@ -5,8 +5,9 @@ many settlers, each with a different provider. The provider's job is to take
 a resolution prompt + the list of valid outcome indices, run inference, and
 return a structured (outcome, confidence, reasoning) result.
 
-v1 ships with the Anthropic provider. OpenAI and Gemini providers will be
-added in Day 3 when API keys are wired in.
+v1 ships with Anthropic, OpenAI, and Gemini providers. Each settler still runs
+one provider; heterogeneity comes from deploying several settlers with
+different `SYNOD_PROVIDER` values.
 """
 
 from __future__ import annotations
@@ -141,13 +142,84 @@ class AnthropicProvider(LLMProvider):
         )
 
 
+class OpenAIProvider(LLMProvider):
+    """OpenAI chat-completions provider."""
+
+    DEFAULT_MODEL = "gpt-4o"
+
+    def __init__(self, *, model: str | None = None, api_key: str | None = None) -> None:
+        from openai import OpenAI  # local import keeps provider optional
+
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError("OPENAI_API_KEY is not set")
+        self._client = OpenAI(api_key=key)
+        self.model_tag = model or self.DEFAULT_MODEL
+
+    def infer(self, prompt: str, outcomes: list[int]) -> InferenceResult:
+        user = _build_user_prompt(prompt, outcomes)
+        resp = self._client.chat.completions.create(
+            model=self.model_tag,
+            temperature=0,
+            max_tokens=512,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+        )
+        text = resp.choices[0].message.content or ""
+        outcome, confidence, reasoning = _parse_inference_json(text, outcomes)
+        return InferenceResult(
+            outcome=outcome,
+            confidence=confidence,
+            reasoning=reasoning,
+            model_tag=self.model_tag,
+        )
+
+
+class GeminiProvider(LLMProvider):
+    """Google Gemini provider via google-genai."""
+
+    DEFAULT_MODEL = "gemini-2.0-flash"
+
+    def __init__(self, *, model: str | None = None, api_key: str | None = None) -> None:
+        from google import genai  # local import keeps provider optional
+
+        key = api_key or os.environ.get("GOOGLE_API_KEY")
+        if not key:
+            raise RuntimeError("GOOGLE_API_KEY is not set")
+        self._client = genai.Client(api_key=key)
+        self.model_tag = model or self.DEFAULT_MODEL
+
+    def infer(self, prompt: str, outcomes: list[int]) -> InferenceResult:
+        user = _build_user_prompt(prompt, outcomes)
+        resp = self._client.models.generate_content(
+            model=self.model_tag,
+            contents=user,
+            config={
+                "system_instruction": SYSTEM_PROMPT,
+                "response_mime_type": "application/json",
+                "temperature": 0,
+            },
+        )
+        text = getattr(resp, "text", "") or ""
+        outcome, confidence, reasoning = _parse_inference_json(text, outcomes)
+        return InferenceResult(
+            outcome=outcome,
+            confidence=confidence,
+            reasoning=reasoning,
+            model_tag=self.model_tag,
+        )
+
+
 def build_provider(provider_name: str, *, model: str | None = None) -> LLMProvider:
     """Factory for the SYNOD_PROVIDER env value."""
     name = provider_name.lower().strip()
     if name == "anthropic":
         return AnthropicProvider(model=model)
     if name == "openai":
-        raise NotImplementedError("openai provider lands Day 3")
+        return OpenAIProvider(model=model)
     if name == "gemini":
-        raise NotImplementedError("gemini provider lands Day 3")
+        return GeminiProvider(model=model)
     raise ValueError(f"unknown SYNOD_PROVIDER: {provider_name}")

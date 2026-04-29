@@ -35,6 +35,13 @@ export const SYNOD_REGISTRY_ABI = [
   },
   {
     type: "function",
+    name: "registeredAxlPubKeys",
+    stateMutability: "view",
+    inputs: [{ name: "axlPubKey", type: "bytes32" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "function",
     name: "isSettled",
     stateMutability: "view",
     inputs: [{ name: "questionId", type: "bytes32" }],

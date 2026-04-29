@@ -8,7 +8,7 @@
  *
  * Lines this parser recognises (sample shapes):
  *   "settler running pubkey=6c08c7ab... peers=1 quorum=2"
- *   "question 5f82a2da... prompt=Was the ..."
+ *   "question 5f82a2da... outcomes=0,1 prompt=Was the ..."
  *   "inference q=5f82a2da... outcome=1 confidence=0.970 model=claude-sonnet-4-6"
  *   "broadcast vote to 4a02e4f0..."
  *   "accepted vote q=5f82a2da... settler=4a02e4f0... outcome=1 (2/2)"
@@ -36,6 +36,7 @@ interface LogEvents {
   status: SettlerStatus;
   questionId?: string;
   prompt?: string;
+  outcomes?: number[];
   votedOutcome?: number;
   votedConfidence?: number;
   reasoning?: string;
@@ -62,6 +63,19 @@ function parseSingleLog(text: string): LogEvents {
     if (m) {
       ev.pubkey = m[1];
       ev.lastUpdateMs = Math.max(ev.lastUpdateMs, ts);
+      continue;
+    }
+
+    m = line.match(/question ([0-9a-f]+) outcomes=([0-9,\-]+) prompt=(.+)$/);
+    if (m) {
+      ev.status = "received";
+      ev.questionId = m[1];
+      ev.outcomes = m[2]
+        .split(",")
+        .map((x) => Number(x))
+        .filter(Number.isFinite);
+      ev.prompt = m[3];
+      ev.lastUpdateMs = ts;
       continue;
     }
 
@@ -136,7 +150,10 @@ export async function parseSettlerLogs(
   for (const { path: p } of logPaths) {
     let text: string;
     try {
-      text = await fs.readFile(path.resolve(p), "utf8");
+      text = await fs.readFile(
+        path.resolve(/*turbopackIgnore: true*/ p),
+        "utf8"
+      );
     } catch {
       continue;
     }
@@ -161,7 +178,7 @@ export async function parseSettlerLogs(
         consensus = {
           questionId: ev.questionId,
           prompt: ev.prompt ?? "",
-          outcomes: [0, 1],
+          outcomes: ev.outcomes ?? [0, 1],
           reachedAt: ev.consensusReachedAtMs,
           outcome: ev.consensusOutcome,
           weightedScore: ev.consensusWeightedScore,

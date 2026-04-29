@@ -8,7 +8,7 @@ A network of heterogeneous AI settler nodes that coordinate over Gensyn AXL to r
 
 Gensyn launched [Delphi](https://blog.gensyn.ai/delphi/) on mainnet on April 22, 2026. Delphi resolves markets via AI models picked by the market creator at creation time. **The model weights are fixed at market creation and cannot be changed** ([source](https://docs.gensyn.ai/tech/delphi-sdk/methods)). This produces a single-model trust dependency: a creator who picks one biased or hallucinating AI model can produce wrong settlements with no recourse.
 
-Synod replaces that single point of trust with a heterogeneous network: 5+ AI models from independent providers, each running on a separate machine, coordinating over an encrypted P2P channel (AXL), and submitting an on-chain settlement only when a quorum of distinct, signed model identities agree.
+Synod replaces that single point of trust with a heterogeneous network: AI models from independent providers, each running on a separate machine, coordinating over an encrypted P2P channel (AXL), and submitting an on-chain proof only when a quorum of distinct, registered model identities agree on the winning outcome.
 
 ## Critical scoping decision (verified Day 1)
 
@@ -51,11 +51,11 @@ Every settler node is the same role architecturally — there is no leader, no c
 
 1. Subscribes to the question stream over AXL (in v1, the question is broadcast manually; in v2, it could be triggered by a Delphi market resolution event).
 2. Runs inference against its own LLM provider with the resolution prompt.
-3. Constructs a `SettlementVote` message signed with its AXL ed25519 identity key.
+3. Constructs a `SettlementVote` message signed with its AXL ed25519 identity key. The signed domain includes protocol version, question id, prompt hash, outcomes hash, deadline, settler pubkey, model tag, outcome, confidence, and timestamp.
 4. Broadcasts the vote to all peers via AXL.
 5. Collects votes from peers within a deadline.
 6. Computes the consensus result locally (deterministic algorithm: weighted majority by confidence).
-7. If a quorum threshold (e.g., 4-of-5 or 3-of-5) is reached, the node with the lowest peer ID submits the on-chain transaction; all others verify and stand by.
+7. If the winning outcome itself reaches quorum threshold (e.g., 4-of-5 or 3-of-5), the supporting voter with the lowest peer ID submits the on-chain transaction; all others verify and stand by.
 
 ## Consensus protocol
 
@@ -67,13 +67,16 @@ Every settler node is the same role architecturally — there is no leader, no c
 - Each settler runs inference. Result includes:
   - `outcome` (binary: 0|1; multi-outcome: index)
   - `confidence` (0-1 float)
-  - `reasoning` (string, optional, for audit)
+  - `reasoning` (string, optional, for audit; not part of the cryptographic proof)
 
 ### Phase 3: Signed vote broadcast
 - Vote payload (canonical JSON, signed):
   ```
   {
     "questionId": "<hex>",
+    "promptHash": "<sha256>",
+    "outcomesHash": "<sha256>",
+    "deadline": <unix_ts>,
     "settlerKey": "<ed25519 pubkey hex>",
     "modelTag": "anthropic-claude-opus-4-7",
     "outcome": 1,
@@ -84,14 +87,17 @@ Every settler node is the same role architecturally — there is no leader, no c
 - Signature: `ed25519(canonical_json(payload))` using AXL identity key.
 
 ### Phase 4: Vote collection
-- Each settler collects votes from N-1 peers until `deadline` or until `n` votes received.
-- Votes are deduplicated by `settlerKey` (one vote per settler).
-- Invalid signatures are rejected.
+- Each settler collects votes from configured peers until `deadline` or until `n` votes received.
+- AXL sender headers are treated as routing metadata because local AXL masks the full sender key; the ed25519 signature is the authoritative identity check.
+- Votes are accepted only when the signed `settlerKey` is a configured peer and, when on-chain mode is enabled, an AXL pubkey registered in `SynodRegistry`.
+- Votes are deduplicated by `settlerKey` (one vote per settler); conflicting second votes are rejected as equivocation.
+- Invalid signatures, invalid outcomes, stale deadlines, future timestamps, and domain mismatches are rejected.
 
 ### Phase 5: Consensus
-- Compute weighted majority: `sum(confidence_i for vote_i where outcome_i = candidate) / sum(confidence_i)` for each candidate.
-- Settlement outcome = candidate with highest weighted score.
-- If `count(votes_for_winner) >= threshold`, consensus is reached. Otherwise, mark as `NO_QUORUM`.
+- First filter candidates to outcomes with at least `threshold` registered votes.
+- Among eligible candidates, compute weighted score: `sum(confidence_i for vote_i where outcome_i = candidate)`.
+- Settlement outcome = eligible candidate with highest weighted score. Ties resolve to lower outcome index.
+- If no outcome has at least `threshold` votes, mark as `NO_QUORUM`.
 
 ### Phase 6: On-chain submission
 - Lowest-peer-ID node (deterministic across the network) submits the transaction:
@@ -99,18 +105,21 @@ Every settler node is the same role architecturally — there is no leader, no c
   SynodRegistry.recordSettlement(
     bytes32 questionId,
     uint8 outcome,
-    bytes[] memory signedVotes
+    uint256 quorumSize,
+    uint256 weightedScoreScaled,
+    bytes calldata signedVotesPayload
   );
   ```
-- Contract verifies each signature corresponds to a registered settler keyset, counts the quorum, stores the result.
+- The contract verifies caller authorization, nonzero question id, nonempty bounded proof payload, and quorum size bounded by registered settler count. It stores the proof immutably and exposes registered AXL pubkeys.
+- The server-side verifier, independent CLI verifier, and any external auditor verify ed25519 signatures, registered AXL membership, domain binding, quorum, and weighted score from the stored payload.
 - All other nodes verify the on-chain submission.
 
 ## On-chain layer (Gensyn L2)
 
 ### `SynodRegistry.sol`
-- `registerSettler(address settler, bytes32 axlPubKey, string modelTag)` — admin-gated, lists approved Synod settler nodes.
-- `recordSettlement(bytes32 questionId, uint8 outcome, bytes[] signedVotes)` — anyone can call; verifies quorum of signed votes from registered settlers; emits `SettlementRecorded` event.
-- View: `getSettlement(bytes32 questionId) returns (uint8 outcome, uint256 quorumSize, address[] settlers)`.
+- `registerSettler(address settler, bytes32 axlPubKey, string modelTag)` — admin-gated, lists approved Synod settler nodes and rejects duplicate or zero AXL pubkeys.
+- `recordSettlement(bytes32 questionId, uint8 outcome, uint256 quorumSize, uint256 weightedScoreScaled, bytes signedVotesPayload)` — registered settlers can anchor one immutable proof per question; emits `SettlementRecorded`.
+- View: `getSettlement(bytes32 questionId) returns (Settlement)` and `registeredAxlPubKeys(bytes32) returns (bool)`.
 
 (v2: stake-based participation, slashing, $AI rewards. Out of scope for hackathon submission.)
 

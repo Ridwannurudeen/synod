@@ -32,6 +32,10 @@ function badRequest(message: string): NextResponse<ApiError> {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+function isHex32(s: string): boolean {
+  return /^[0-9a-fA-F]{64}$/.test(s);
+}
+
 async function readPrimaryPubkey(): Promise<string> {
   const res = await fetch(`${PRIMARY_AXL_API}/topology`, {
     cache: "no-store",
@@ -70,6 +74,11 @@ function runInject(args: string[]): Promise<RunResult> {
 }
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const token = process.env.SYNOD_UI_INJECT_TOKEN;
+  if (token && req.headers.get("x-synod-token") !== token) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   let body: RawBody;
   try {
     body = (await req.json()) as RawBody;
@@ -82,9 +91,13 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (prompt.length > 1024) return badRequest("prompt too long (>1024 chars)");
 
   const outcomes = Array.isArray(body.outcomes)
-    ? body.outcomes.map((n) => Number(n)).filter(Number.isFinite)
+    ? body.outcomes.map((n) => Number(n)).filter(Number.isInteger)
     : [0, 1];
   if (outcomes.length < 2) return badRequest("at least two outcomes required");
+  if (outcomes.length > 16) return badRequest("too many outcomes (>16)");
+  if (new Set(outcomes).size !== outcomes.length) {
+    return badRequest("outcomes must be unique integers");
+  }
 
   const deadlineSecs = Math.max(30, Math.min(3_600, Number(body.deadlineSecs) || 180));
 
@@ -95,6 +108,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
+  if (!isHex32(target)) return badRequest("targetPubkey must be a 32-byte hex string");
 
   const args = [
     "--axl",

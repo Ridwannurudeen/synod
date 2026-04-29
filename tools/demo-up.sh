@@ -19,14 +19,70 @@ CONTRACTS_DIR="${ROOT_DIR}/contracts"
 UI_DIR="${ROOT_DIR}/ui"
 PY="${SETTLER_DIR}/.venv/Scripts/python.exe"
 [[ -x "${PY}" ]] || PY="${SETTLER_DIR}/.venv/bin/python"
+RUNTIME_CONFIG="${UI_DIR}/.synod-demo-runtime.json"
 
-export PATH="/c/Users/HP/.foundry/bin:${PATH}"
+resolve_tool() {
+  local name="$1"
+  local candidate
+  for candidate in "${name}" "${name}.exe"; do
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      command -v "${candidate}"
+      return 0
+    fi
+  done
+  for dir in "/c/Users/HP/.foundry/bin" "/mnt/c/Users/HP/.foundry/bin" "${HOME}/.foundry/bin"; do
+    for candidate in "${dir}/${name}" "${dir}/${name}.exe"; do
+      if [[ -x "${candidate}" ]]; then
+        echo "${candidate}"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+FORGE_BIN="$(resolve_tool forge)" || { echo "forge missing; install Foundry or add it to PATH"; exit 1; }
+CAST_BIN="$(resolve_tool cast)" || { echo "cast missing; install Foundry or add it to PATH"; exit 1; }
+ANVIL_BIN="$(resolve_tool anvil)" || { echo "anvil missing; install Foundry or add it to PATH"; exit 1; }
+CURL_BIN="$(command -v curl.exe 2>/dev/null || command -v curl 2>/dev/null)" || {
+  echo "curl missing"
+  exit 1
+}
+
+to_windows_path() {
+  local path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "${path}"
+  elif command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "${path}"
+  else
+    echo "${path}"
+  fi
+}
+
+stop_stale_ui_dev() {
+  local ui_win
+  ui_win="$(to_windows_path "${UI_DIR}")"
+  powershell.exe -NoProfile -Command '
+$ui = $args[0]
+Get-CimInstance Win32_Process | Where-Object {
+  $_.Name -eq "node.exe" -and
+  $_.CommandLine -and
+  $_.CommandLine.Contains($ui) -and
+  $_.CommandLine.Contains("next") -and
+  $_.CommandLine.Contains("dev")
+} | ForEach-Object {
+  Stop-Process -Id $_.ProcessId -Force
+}
+' "${ui_win}" >/dev/null 2>&1 || true
+}
 
 cd "${ROOT_DIR}"
 
 ANVIL_PORT=8545
 RPC_URL="http://127.0.0.1:${ANVIL_PORT}"
 ACC0_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+ACC0_ADDR="0xf39Fd6e51aad88F6F4ce6aB8827279cfFFb92266"
 ACC1_KEY="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 ACC1_ADDR="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 ACC2_KEY="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
@@ -42,65 +98,104 @@ elif [[ -f axl/axl-node ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node"
 else echo "axl binary missing — run scripts/axl-keygen.sh and forge build first"; exit 1; fi
 
 mkdir -p logs
+rm -f \
+  "${ROOT_DIR}/logs/anvil.log" \
+  "${ROOT_DIR}/logs/node-a.log" \
+  "${ROOT_DIR}/logs/node-b.log" \
+  "${ROOT_DIR}/logs/node-c.log" \
+  "${ROOT_DIR}/logs/settler-a.log" \
+  "${ROOT_DIR}/logs/settler-b.log" \
+  "${ROOT_DIR}/logs/settler-c.log" \
+  "${ROOT_DIR}/logs/ui.log"
 
 echo "[demo] cleaning previous run..."
+stop_stale_ui_dev
 taskkill //F //IM axl-node.exe >/dev/null 2>&1 || true
 taskkill //F //IM anvil.exe >/dev/null 2>&1 || true
-taskkill //F //IM node.exe >/dev/null 2>&1 || true
 pkill -f run_settler.py >/dev/null 2>&1 || true
 sleep 1
 
 echo "[demo] starting anvil on :${ANVIL_PORT}..."
-anvil --port "${ANVIL_PORT}" --silent > "${ROOT_DIR}/logs/anvil.log" 2>&1 &
+"${ANVIL_BIN}" --port "${ANVIL_PORT}" --silent > "${ROOT_DIR}/logs/anvil.log" 2>&1 &
 PID_ANVIL=$!
+PID_AXL_A=""
+PID_AXL_B=""
+PID_SET_A=""
+PID_SET_B=""
+PID_UI=""
 
 cleanup() {
   echo
   echo "[demo] shutting down..."
+  [[ -n "${PID_UI}" ]] && kill "${PID_UI}" 2>/dev/null || true
+  [[ -n "${PID_SET_A}" ]] && kill "${PID_SET_A}" 2>/dev/null || true
+  [[ -n "${PID_SET_B}" ]] && kill "${PID_SET_B}" 2>/dev/null || true
+  [[ -n "${PID_AXL_A}" ]] && kill "${PID_AXL_A}" 2>/dev/null || true
+  [[ -n "${PID_AXL_B}" ]] && kill "${PID_AXL_B}" 2>/dev/null || true
   kill "${PID_ANVIL}" 2>/dev/null || true
-  taskkill //F //IM anvil.exe >/dev/null 2>&1 || true
-  taskkill //F //IM axl-node.exe >/dev/null 2>&1 || true
-  taskkill //F //IM node.exe >/dev/null 2>&1 || true
-  pkill -f run_settler.py >/dev/null 2>&1 || true
+  rm -f "${RUNTIME_CONFIG}" 2>/dev/null || true
+  stop_stale_ui_dev
 }
 trap cleanup EXIT INT TERM
 
 for _ in $(seq 1 30); do
-  cast block-number --rpc-url "${RPC_URL}" >/dev/null 2>&1 && break
+  "${CAST_BIN}" block-number --rpc-url "${RPC_URL}" >/dev/null 2>&1 && break
   sleep 1
 done
 
 echo "[demo] deploying SynodRegistry..."
 DEPLOY_OUT=$(cd "${CONTRACTS_DIR}" && \
-  DEPLOYER_PRIVATE_KEY="${ACC0_KEY}" \
-  forge script script/Deploy.s.sol:Deploy \
-    --rpc-url "${RPC_URL}" --broadcast --skip-simulation -vvv 2>&1)
-REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "SynodRegistry: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $2}')
+  "${FORGE_BIN}" create \
+    --rpc-url "${RPC_URL}" \
+    --private-key "${ACC0_KEY}" \
+    --broadcast \
+    src/SynodRegistry.sol:SynodRegistry \
+    --constructor-args "${ACC0_ADDR}" 2>&1)
+REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "Deployed to: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $3}')
 [[ -n "${REG_ADDR}" ]] || { echo "deploy failed"; echo "${DEPLOY_OUT}" | tail -20; exit 1; }
 echo "[demo]   registry: ${REG_ADDR}"
+printf '{"rpcUrl":"%s","registryAddress":"%s"}\n' "${RPC_URL}" "${REG_ADDR}" > "${RUNTIME_CONFIG}"
 
 echo "[demo] starting AXL nodes..."
 ( cd configs/local && "${AXL_BIN}" -config node-a.json > "${ROOT_DIR}/logs/node-a.log" 2>&1 ) &
+PID_AXL_A=$!
 ( cd configs/local && "${AXL_BIN}" -config node-b.json > "${ROOT_DIR}/logs/node-b.log" 2>&1 ) &
+PID_AXL_B=$!
 
 for _ in $(seq 1 30); do
-  curl -fsS http://127.0.0.1:9002/topology >/dev/null 2>&1 && \
-  curl -fsS http://127.0.0.1:9012/topology >/dev/null 2>&1 && break
+  "${CURL_BIN}" -fsS http://127.0.0.1:9002/topology >/dev/null 2>&1 && \
+  "${CURL_BIN}" -fsS http://127.0.0.1:9012/topology >/dev/null 2>&1 && break
   sleep 1
 done
 
-PUB_A=$(curl -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
-PUB_B=$(curl -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])")
+PUB_A=$("${CURL_BIN}" -fsS http://127.0.0.1:9002/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
+PUB_B=$("${CURL_BIN}" -fsS http://127.0.0.1:9012/topology | "${PY}" -c "import sys,json;print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
+if [[ -z "${PUB_A}" || -z "${PUB_B}" ]]; then
+  echo "AXL topology failed"
+  echo "--- node-a.log tail ---"; tail -30 "${ROOT_DIR}/logs/node-a.log" || true
+  echo "--- node-b.log tail ---"; tail -30 "${ROOT_DIR}/logs/node-b.log" || true
+  exit 1
+fi
 echo "[demo]   node A: ${PUB_A:0:16}…"
 echo "[demo]   node B: ${PUB_B:0:16}…"
 
 echo "[demo] registering settlers..."
-cast send "${REG_ADDR}" "registerSettler(address,bytes32,string)" \
+REG_A_OUT=$("${CAST_BIN}" send "${REG_ADDR}" "registerSettler(address,bytes32,string)" \
   "${ACC1_ADDR}" "0x${PUB_A}" "claude-sonnet-4-6-A" \
-  --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1
-cast send "${REG_ADDR}" "registerSettler(address,bytes32,string)" \
+  --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" 2>&1) || {
+  echo "registerSettler A failed"
+  echo "${REG_A_OUT}" | tail -20
+  exit 1
+}
+REG_B_OUT=$("${CAST_BIN}" send "${REG_ADDR}" "registerSettler(address,bytes32,string)" \
   "${ACC2_ADDR}" "0x${PUB_B}" "claude-sonnet-4-6-B" \
-  --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1
+  --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" 2>&1) || {
+  echo "registerSettler B failed"
+  echo "${REG_B_OUT}" | tail -20
+  exit 1
+}
+REG_COUNT=$("${CAST_BIN}" call "${REG_ADDR}" "registeredSettlerCount()(uint256)" --rpc-url "${RPC_URL}" | tr -d '\r')
+echo "[demo]   registered settlers: ${REG_COUNT}"
 
 echo "[demo] mesh routes converging..."
 sleep 12
@@ -110,46 +205,74 @@ KEY_B="${ROOT_DIR}/keys/node-b.pem"
 
 echo "[demo] starting settler agents..."
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9002" SYNOD_IDENTITY_KEY="${KEY_A}" \
-  SYNOD_PEER_KEYS="${PUB_B}" SYNOD_QUORUM=2 \
-  SYNOD_RPC_URL="${RPC_URL}" SYNOD_REGISTRY_ADDRESS="${REG_ADDR}" \
-  SYNOD_EVM_KEY="${ACC1_KEY}" SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9002" \
+    --identity-key "${KEY_A}" \
+    --peer-keys "${PUB_B}" \
+    --quorum 2 \
+    --rpc-url "${RPC_URL}" \
+    --registry-address "${REG_ADDR}" \
+    --evm-key "${ACC1_KEY}" \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-a.log" 2>&1 &
+PID_SET_A=$!
 
 (
-  cd "${SETTLER_DIR}" && \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
-  SYNOD_PROVIDER="${SYNOD_PROVIDER}" SYNOD_MODEL="${SYNOD_MODEL}" \
-  SYNOD_AXL_API="http://127.0.0.1:9012" SYNOD_IDENTITY_KEY="${KEY_B}" \
-  SYNOD_PEER_KEYS="${PUB_A}" SYNOD_QUORUM=2 \
-  SYNOD_RPC_URL="${RPC_URL}" SYNOD_REGISTRY_ADDRESS="${REG_ADDR}" \
-  SYNOD_EVM_KEY="${ACC2_KEY}" SYNOD_LOG_LEVEL=INFO \
-  "${PY}" tools/run_settler.py
+  cd "${SETTLER_DIR}" || exit 1
+  "${PY}" tools/run_settler.py \
+    --provider "${SYNOD_PROVIDER}" \
+    --model "${SYNOD_MODEL}" \
+    --axl "http://127.0.0.1:9012" \
+    --identity-key "${KEY_B}" \
+    --peer-keys "${PUB_A}" \
+    --quorum 2 \
+    --rpc-url "${RPC_URL}" \
+    --registry-address "${REG_ADDR}" \
+    --evm-key "${ACC2_KEY}" \
+    --log-level INFO
 ) > "${ROOT_DIR}/logs/settler-b.log" 2>&1 &
+PID_SET_B=$!
 
 sleep 4
+if ! kill -0 "${PID_SET_A}" 2>/dev/null; then
+  echo "settler A failed to start"
+  tail -50 "${ROOT_DIR}/logs/settler-a.log" 2>/dev/null || true
+  exit 1
+fi
+if ! kill -0 "${PID_SET_B}" 2>/dev/null; then
+  echo "settler B failed to start"
+  tail -50 "${ROOT_DIR}/logs/settler-b.log" 2>/dev/null || true
+  exit 1
+fi
 
 echo "[demo] starting Next.js UI on :3000..."
 (
-  cd "${UI_DIR}" && \
-  SYNOD_RPC_URL="${RPC_URL}" \
-  SYNOD_REGISTRY_ADDRESS="${REG_ADDR}" \
-  SYNOD_UI_LOG_FILES="logs/settler-a.log,logs/settler-b.log" \
-  SYNOD_UI_AXL_API="http://127.0.0.1:9002" \
-  npm run dev
+  UI_WIN="$(to_windows_path "${UI_DIR}")"
+  powershell.exe -NoProfile -Command "Set-Location -LiteralPath '${UI_WIN}'; npm.cmd run dev"
 ) > "${ROOT_DIR}/logs/ui.log" 2>&1 &
+PID_UI=$!
 
 # Wait for the UI dev server to be ready
 echo -n "[demo] waiting for UI"
+UI_READY=0
 for _ in $(seq 1 60); do
-  if curl -fsS -o /dev/null http://127.0.0.1:3000 2>/dev/null; then echo " ✓"; break; fi
+  if "${CURL_BIN}" -fsS http://127.0.0.1:3000 >/dev/null 2>&1; then
+    echo " ✓"
+    UI_READY=1
+    break
+  fi
   echo -n "."
   sleep 1
 done
+if [[ "${UI_READY}" -ne 1 ]]; then
+  echo
+  echo "UI did not become ready"
+  tail -50 "${ROOT_DIR}/logs/ui.log" 2>/dev/null || true
+  exit 1
+fi
 
 cat <<EOF
 
@@ -181,7 +304,7 @@ EOF
 while true; do
   sleep 30
   # Light health check; warn if any subsystem dies
-  if ! curl -fsS -o /dev/null http://127.0.0.1:9002/topology 2>/dev/null; then
+  if ! "${CURL_BIN}" -fsS http://127.0.0.1:9002/topology >/dev/null 2>&1; then
     echo "[demo] WARNING: AXL node A unreachable"
   fi
 done

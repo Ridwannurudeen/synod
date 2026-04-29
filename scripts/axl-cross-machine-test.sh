@@ -15,7 +15,14 @@ set -uo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-VPS_HOST="${VPS_HOST:-root@75.119.153.252}"
+if [[ -z "${VPS_HOST:-}" ]]; then
+  echo "error: set VPS_HOST=user@host for the remote AXL node" >&2
+  exit 1
+fi
+if [[ -z "${VPS_PEER_URL:-}" ]]; then
+  echo "error: set VPS_PEER_URL=tls://host-or-ip:9001 for the remote AXL peer" >&2
+  exit 1
+fi
 VPS_API="http://127.0.0.1:9002"        # over SSH
 LOCAL_API="http://127.0.0.1:9022"
 
@@ -32,7 +39,7 @@ fi
 
 # Verify VPS node is up
 echo "checking VPS node..."
-VPS_PUBKEY=$(ssh -o ConnectTimeout=5 "${VPS_HOST}" "curl -fsS ${VPS_API}/topology" | python -c "import sys,json; print(json.load(sys.stdin)['our_public_key'])")
+VPS_PUBKEY=$(ssh -o ConnectTimeout=5 "${VPS_HOST}" "curl -fsS ${VPS_API}/topology" | python -c "import sys,json; print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
 if [[ -z "${VPS_PUBKEY}" ]]; then
   echo "error: could not reach VPS AXL node" >&2; exit 1
 fi
@@ -40,9 +47,19 @@ echo "VPS pubkey: ${VPS_PUBKEY}"
 
 # Start local node
 mkdir -p logs
-cd configs/local
+LOCAL_CONFIG="${ROOT_DIR}/logs/node-local.remote.json"
+cat > "${LOCAL_CONFIG}" <<EOF
+{
+  "PrivateKeyPath": "../keys/node-local.pem",
+  "Peers": ["${VPS_PEER_URL}"],
+  "Listen": [],
+  "api_port": 9022,
+  "tcp_port": 7000
+}
+EOF
+cd logs
 echo "starting local node (api:9022, peering to VPS)..."
-"${AXL_BIN}" -config node-local.json > "${ROOT_DIR}/logs/node-local.log" 2>&1 &
+"${AXL_BIN}" -config node-local.remote.json > "${ROOT_DIR}/logs/node-local.log" 2>&1 &
 PID_LOCAL=$!
 trap 'kill "${PID_LOCAL}" 2>/dev/null || true' EXIT
 cd "${ROOT_DIR}"
@@ -52,7 +69,7 @@ for _ in $(seq 1 30); do
   if curl -fsS "${LOCAL_API}/topology" >/dev/null 2>&1; then break; fi
   sleep 1
 done
-LOCAL_PUBKEY=$(curl -fsS "${LOCAL_API}/topology" | python -c "import sys,json; print(json.load(sys.stdin)['our_public_key'])")
+LOCAL_PUBKEY=$(curl -fsS "${LOCAL_API}/topology" | python -c "import sys,json; print(json.load(sys.stdin)['our_public_key'])" | tr -d '\r')
 echo "local pubkey: ${LOCAL_PUBKEY}"
 
 # Wait for mesh routes
