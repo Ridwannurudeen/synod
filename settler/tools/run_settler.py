@@ -29,6 +29,7 @@ from synod_settler.agent import SettlerAgent  # noqa: E402
 from synod_settler.axl_client import AxlClient  # noqa: E402
 from synod_settler.identity import Identity  # noqa: E402
 from synod_settler.llm import build_provider  # noqa: E402
+from synod_settler.onchain import OnchainClient  # noqa: E402
 
 
 def main() -> int:
@@ -63,12 +64,40 @@ def main() -> int:
         )
         return 2
 
+    # Optional on-chain submission. Settler runs fine without these set
+    # — useful for "verifier" nodes that watch consensus but don't post.
+    onchain: OnchainClient | None = None
+    rpc_url = os.environ.get("SYNOD_RPC_URL", "").strip()
+    registry_addr = os.environ.get("SYNOD_REGISTRY_ADDRESS", "").strip()
+    evm_key = os.environ.get("SYNOD_EVM_KEY", "").strip()
+    if rpc_url and registry_addr and evm_key:
+        onchain = OnchainClient(
+            rpc_url=rpc_url,
+            registry_address=registry_addr,
+            evm_private_key=evm_key,
+        )
+        if not onchain.is_registered():
+            logging.error(
+                "EVM address %s is not in SynodRegistry; settler cannot post on-chain",
+                onchain.address,
+            )
+            return 3
+        logging.info(
+            "on-chain ready: registry=%s settler=%s chain=%s",
+            registry_addr,
+            onchain.address,
+            onchain.w3.eth.chain_id,
+        )
+    else:
+        logging.info("on-chain submission disabled (SYNOD_RPC_URL/REGISTRY/EVM_KEY not set)")
+
     agent = SettlerAgent(
         identity=identity,
         axl=axl,
         provider=provider,
         peer_pubkeys=peer_pubkeys,
         quorum=quorum,
+        onchain=onchain,
     )
     agent.run_forever()
     return 0

@@ -24,6 +24,12 @@ from .axl_client import AxlClient, InboundMessage
 from .consensus import ConsensusError, compute_consensus
 from .identity import Identity, verify_signature
 from .llm import LLMProvider
+from .onchain import (
+    OnchainClient,
+    is_designated_poster,
+    votes_payload_for_chain,
+    weighted_score_to_scaled,
+)
 from .protocol import (
     MessageKind,
     QuestionAnnouncement,
@@ -71,6 +77,7 @@ class SettlerAgent:
         quorum: int = 2,
         poll_interval_s: float = 0.25,
         on_consensus: Callable[[str, int, list[dict[str, Any]]], None] | None = None,
+        onchain: OnchainClient | None = None,
     ) -> None:
         self.identity = identity
         self.axl = axl
@@ -82,6 +89,7 @@ class SettlerAgent:
         self.quorum = quorum
         self.poll_interval_s = poll_interval_s
         self.on_consensus = on_consensus
+        self.onchain = onchain
 
         self._questions: dict[str, QuestionState] = {}
 
@@ -286,3 +294,55 @@ class SettlerAgent:
         )
         if self.on_consensus:
             self.on_consensus(question_id, outcome.outcome, outcome.votes)
+        self._maybe_post_onchain(question_id, outcome.outcome, outcome.quorum_size,
+                                 outcome.weighted_score, outcome.votes)
+
+    def _maybe_post_onchain(
+        self,
+        question_id: str,
+        outcome: int,
+        quorum_size: int,
+        weighted_score: float,
+        votes: list[dict[str, Any]],
+    ) -> None:
+        """Post the consensus to SynodRegistry if this settler is the designated poster.
+
+        Designation rule: the settler with the lowest hex pubkey among the
+        voters submits. This makes the choice deterministic across the
+        network — every node arrives at the same poster from local state,
+        no coordination beyond consensus is required.
+        """
+        if self.onchain is None:
+            return
+        voter_pubkeys = [str(v["settler_pubkey"]) for v in votes]
+        if not is_designated_poster(self.identity.public_key_hex, voter_pubkeys):
+            logger.info(
+                "not the designated poster for q=%s; another settler will submit",
+                question_id[:16],
+            )
+            return
+        if self.onchain.is_settled(question_id):
+            logger.info("q=%s already settled on-chain; skipping submit",
+                        question_id[:16])
+            return
+        try:
+            payload = votes_payload_for_chain(votes)
+            scaled = weighted_score_to_scaled(weighted_score)
+            receipt = self.onchain.submit_settlement(
+                question_id_hex=question_id,
+                outcome=outcome,
+                quorum_size=quorum_size,
+                weighted_score_scaled=scaled,
+                signed_votes_payload=payload,
+            )
+            tx_hash = receipt["transactionHash"].hex()
+            logger.info(
+                "ONCHAIN q=%s tx=%s outcome=%d quorum=%d",
+                question_id[:16],
+                tx_hash,
+                outcome,
+                quorum_size,
+            )
+        except Exception as e:
+            logger.exception("on-chain submission failed for q=%s: %s",
+                             question_id[:16], e)
