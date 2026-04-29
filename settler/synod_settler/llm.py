@@ -213,6 +213,62 @@ class GeminiProvider(LLMProvider):
         )
 
 
+class DeterministicProvider(LLMProvider):
+    """Test-only provider: returns canned (outcome, confidence, reasoning).
+
+    Used by the deterministic smoke test so the AXL → consensus → on-chain
+    path can be exercised in CI without real API keys. Output is a function
+    of `prompt` (sha256-keyed) so two settlers using the same seed produce
+    matching answers, which is exactly what we want for a quorum smoke test.
+
+    Configure with SYNOD_PROVIDER=deterministic and optionally
+    SYNOD_DETERMINISTIC_OUTCOME (int) and SYNOD_DETERMINISTIC_CONFIDENCE
+    (float in [0,1]) to pin the answer; otherwise outcome is the first
+    valid outcome in the list and confidence is 0.95.
+    """
+
+    DEFAULT_MODEL = "deterministic-v1"
+
+    def __init__(self, *, model: str | None = None) -> None:
+        self.model_tag = model or self.DEFAULT_MODEL
+        outcome_raw = os.environ.get("SYNOD_DETERMINISTIC_OUTCOME")
+        conf_raw = os.environ.get("SYNOD_DETERMINISTIC_CONFIDENCE")
+        self._pinned_outcome: int | None = None
+        self._pinned_confidence: float | None = None
+        if outcome_raw is not None:
+            try:
+                self._pinned_outcome = int(outcome_raw)
+            except ValueError:
+                pass
+        if conf_raw is not None:
+            try:
+                v = float(conf_raw)
+                if 0.0 <= v <= 1.0:
+                    self._pinned_confidence = v
+            except ValueError:
+                pass
+
+    def infer(self, prompt: str, outcomes: list[int]) -> InferenceResult:
+        outcome = (
+            self._pinned_outcome
+            if self._pinned_outcome is not None and self._pinned_outcome in outcomes
+            else outcomes[0]
+        )
+        confidence = (
+            self._pinned_confidence if self._pinned_confidence is not None else 0.95
+        )
+        reasoning = (
+            f"deterministic provider: returning outcome={outcome} "
+            f"with confidence={confidence:.2f} for smoke test (no real inference)"
+        )
+        return InferenceResult(
+            outcome=int(outcome),
+            confidence=float(confidence),
+            reasoning=reasoning,
+            model_tag=self.model_tag,
+        )
+
+
 def build_provider(provider_name: str, *, model: str | None = None) -> LLMProvider:
     """Factory for the SYNOD_PROVIDER env value."""
     name = provider_name.lower().strip()
@@ -222,4 +278,6 @@ def build_provider(provider_name: str, *, model: str | None = None) -> LLMProvid
         return OpenAIProvider(model=model)
     if name == "gemini":
         return GeminiProvider(model=model)
+    if name == "deterministic":
+        return DeterministicProvider(model=model)
     raise ValueError(f"unknown SYNOD_PROVIDER: {provider_name}")
