@@ -17,6 +17,7 @@ contract SynodRegistryTest is Test {
     bytes32 internal axlKey3 = bytes32(uint256(3));
 
     bytes32 internal QID = bytes32(uint256(0xc0ffee));
+    bytes internal proof = bytes("{\"protocol_version\":1,\"votes\":[]}");
 
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
     event SettlerRegistered(address indexed settler, bytes32 axlPubKey, string modelTag);
@@ -83,6 +84,7 @@ contract SynodRegistryTest is Test {
         assertEq(axl, axlKey1);
         assertEq(tag, "claude-sonnet-4-6");
         assertEq(registry.registeredSettlerCount(), 1);
+        assertTrue(registry.registeredAxlPubKeys(axlKey1));
     }
 
     function test_RegisterSettler_RevertsIfNotAdmin() public {
@@ -97,12 +99,26 @@ contract SynodRegistryTest is Test {
         registry.registerSettler(address(0), axlKey1, "x");
     }
 
+    function test_RegisterSettler_RevertsOnZeroAxlPubKey() public {
+        vm.expectRevert(SynodRegistry.ZeroAxlPubKey.selector);
+        vm.prank(admin);
+        registry.registerSettler(settler1, bytes32(0), "x");
+    }
+
     function test_RegisterSettler_RevertsOnDuplicate() public {
         vm.prank(admin);
         registry.registerSettler(settler1, axlKey1, "x");
         vm.expectRevert(SynodRegistry.AlreadyRegistered.selector);
         vm.prank(admin);
         registry.registerSettler(settler1, axlKey1, "x");
+    }
+
+    function test_RegisterSettler_RevertsOnDuplicateAxlPubKey() public {
+        vm.prank(admin);
+        registry.registerSettler(settler1, axlKey1, "x");
+        vm.expectRevert(SynodRegistry.DuplicateAxlPubKey.selector);
+        vm.prank(admin);
+        registry.registerSettler(settler2, axlKey1, "y");
     }
 
     function test_RevokeSettler() public {
@@ -118,6 +134,7 @@ contract SynodRegistryTest is Test {
         (bool registered,,) = registry.settlers(settler1);
         assertFalse(registered);
         assertEq(registry.registeredSettlerCount(), 0);
+        assertFalse(registry.registeredAxlPubKeys(axlKey1));
     }
 
     function test_RevokeSettler_RevertsIfNotRegistered() public {
@@ -169,17 +186,17 @@ contract SynodRegistryTest is Test {
         _registerAll();
         vm.expectRevert(SynodRegistry.NotRegisteredSettler.selector);
         vm.prank(stranger);
-        registry.recordSettlement(QID, 1, 3, 2_750_000, "");
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
     }
 
     function test_RecordSettlement_RevertsIfAlreadySealed() public {
         _registerAll();
         vm.prank(settler1);
-        registry.recordSettlement(QID, 1, 3, 2_750_000, "");
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
 
         vm.expectRevert(SynodRegistry.AlreadySealed.selector);
         vm.prank(settler2);
-        registry.recordSettlement(QID, 0, 3, 1_500_000, "");
+        registry.recordSettlement(QID, 0, 3, 1_500_000, proof);
     }
 
     function test_RecordSettlement_RevertsOnZeroQuorum() public {
@@ -189,11 +206,32 @@ contract SynodRegistryTest is Test {
         registry.recordSettlement(QID, 1, 0, 0, "");
     }
 
+    function test_RecordSettlement_RevertsOnQuorumAboveRegisteredCount() public {
+        _registerAll();
+        vm.expectRevert(SynodRegistry.InvalidQuorumSize.selector);
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 4, 0, proof);
+    }
+
+    function test_RecordSettlement_RevertsOnZeroQuestionId() public {
+        _registerAll();
+        vm.expectRevert(SynodRegistry.InvalidQuestionId.selector);
+        vm.prank(settler1);
+        registry.recordSettlement(bytes32(0), 1, 2, 0, proof);
+    }
+
+    function test_RecordSettlement_RevertsOnEmptyProofPayload() public {
+        _registerAll();
+        vm.expectRevert(SynodRegistry.InvalidProofPayload.selector);
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 2, 0, "");
+    }
+
     function test_RecordSettlement_AnyRegisteredSettlerCanPost() public {
         _registerAll();
         // settler3 posts even though it's listed last in the registry
         vm.prank(settler3);
-        registry.recordSettlement(QID, 1, 3, 2_750_000, "");
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
         SynodRegistry.Settlement memory s = registry.getSettlement(QID);
         assertEq(s.postedBy, settler3);
     }
@@ -202,7 +240,7 @@ contract SynodRegistryTest is Test {
         _registerAll();
         assertFalse(registry.isSettled(QID));
         vm.prank(settler1);
-        registry.recordSettlement(QID, 0, 2, 1_400_000, "");
+        registry.recordSettlement(QID, 0, 2, 1_400_000, proof);
         assertTrue(registry.isSettled(QID));
     }
 
@@ -213,7 +251,7 @@ contract SynodRegistryTest is Test {
 
         vm.expectRevert(SynodRegistry.NotRegisteredSettler.selector);
         vm.prank(settler1);
-        registry.recordSettlement(QID, 1, 3, 2_750_000, "");
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
     }
 
     // --- fuzz --------------------------------------------------------------
@@ -225,9 +263,11 @@ contract SynodRegistryTest is Test {
         uint256 score
     ) public {
         vm.assume(quorum > 0);
+        vm.assume(quorum <= 3);
+        vm.assume(qid != bytes32(0));
         _registerAll();
         vm.prank(settler1);
-        registry.recordSettlement(qid, outcome, quorum, score, "");
+        registry.recordSettlement(qid, outcome, quorum, score, proof);
         SynodRegistry.Settlement memory s = registry.getSettlement(qid);
         assertEq(s.outcome, outcome);
         assertEq(s.quorumSize, quorum);

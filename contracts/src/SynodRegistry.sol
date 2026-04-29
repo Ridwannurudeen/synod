@@ -15,8 +15,9 @@ pragma solidity ^0.8.24;
 /// the ed25519 signature, and checks it against the settler's AXL pubkey.
 /// Doing the ed25519 verification in pure Solidity is gas-prohibitive and
 /// the EVM has no ed25519 precompile, so verification is intentionally
-/// off-chain. On-chain we trust the registered EOA set; off-chain anyone
-/// can verify the audit trail.
+/// off-chain. On-chain we enforce the registered EOA set, unique registered
+/// AXL pubkeys, bounded proof payloads, and first-write finality; off-chain
+/// anyone can verify the cryptographic proof.
 contract SynodRegistry {
     struct Settlement {
         bytes32 questionId;
@@ -36,9 +37,11 @@ contract SynodRegistry {
 
     address public admin;
     mapping(address => Settler) public settlers;
+    mapping(bytes32 => bool) public registeredAxlPubKeys;
     mapping(bytes32 => Settlement) private _settlements;
     mapping(bytes32 => bool) public sealed_;
     uint256 public registeredSettlerCount;
+    uint256 public constant MAX_SIGNED_VOTES_PAYLOAD_BYTES = 65_536;
 
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
     event SettlerRegistered(address indexed settler, bytes32 axlPubKey, string modelTag);
@@ -58,6 +61,11 @@ contract SynodRegistry {
     error AlreadyRegistered();
     error NotRegistered();
     error ZeroAddress();
+    error ZeroAxlPubKey();
+    error DuplicateAxlPubKey();
+    error InvalidQuestionId();
+    error InvalidProofPayload();
+    error PayloadTooLarge();
 
     constructor(address admin_) {
         if (admin_ == address(0)) revert ZeroAddress();
@@ -92,12 +100,15 @@ contract SynodRegistry {
         string calldata modelTag
     ) external onlyAdmin {
         if (settler == address(0)) revert ZeroAddress();
+        if (axlPubKey == bytes32(0)) revert ZeroAxlPubKey();
         if (settlers[settler].registered) revert AlreadyRegistered();
+        if (registeredAxlPubKeys[axlPubKey]) revert DuplicateAxlPubKey();
         settlers[settler] = Settler({
             registered: true,
             axlPubKey: axlPubKey,
             modelTag: modelTag
         });
+        registeredAxlPubKeys[axlPubKey] = true;
         registeredSettlerCount++;
         emit SettlerRegistered(settler, axlPubKey, modelTag);
     }
@@ -105,7 +116,9 @@ contract SynodRegistry {
     /// @notice Remove a settler from the allowlist.
     function revokeSettler(address settler) external onlyAdmin {
         if (!settlers[settler].registered) revert NotRegistered();
+        bytes32 axlPubKey = settlers[settler].axlPubKey;
         delete settlers[settler];
+        delete registeredAxlPubKeys[axlPubKey];
         registeredSettlerCount--;
         emit SettlerRevoked(settler);
     }
@@ -115,8 +128,8 @@ contract SynodRegistry {
     /// @param questionId 32-byte unique market identifier (matches
     ///        QuestionAnnouncement.question_id off-chain).
     /// @param outcome The agreed-upon outcome index.
-    /// @param quorumSize Number of distinct settlers whose signed votes are
-    ///        included in `signedVotesPayload`.
+    /// @param quorumSize Number of distinct registered settlers whose valid
+    ///        signed votes support the winning outcome.
     /// @param weightedScoreScaled Confidence-weighted score for the winning
     ///        outcome, scaled by 1e6 (so 1.98 → 1980000).
     /// @param signedVotesPayload Raw bytes containing the bundle of signed
@@ -129,8 +142,15 @@ contract SynodRegistry {
         uint256 weightedScoreScaled,
         bytes calldata signedVotesPayload
     ) external onlySettler {
+        if (questionId == bytes32(0)) revert InvalidQuestionId();
         if (sealed_[questionId]) revert AlreadySealed();
-        if (quorumSize == 0) revert InvalidQuorumSize();
+        if (quorumSize == 0 || quorumSize > registeredSettlerCount) {
+            revert InvalidQuorumSize();
+        }
+        if (signedVotesPayload.length == 0) revert InvalidProofPayload();
+        if (signedVotesPayload.length > MAX_SIGNED_VOTES_PAYLOAD_BYTES) {
+            revert PayloadTooLarge();
+        }
 
         _settlements[questionId] = Settlement({
             questionId: questionId,
