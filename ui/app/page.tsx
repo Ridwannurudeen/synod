@@ -148,6 +148,12 @@ export default function HomePage() {
           >
             AXL mesh →
           </a>
+          <a
+            href="/verify"
+            className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-emerald-700 hover:text-emerald-300"
+          >
+            Verify proof →
+          </a>
         </div>
         <p className="max-w-3xl text-sm text-zinc-400">
           Heterogeneous AI models running on independent machines coordinate over
