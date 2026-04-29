@@ -349,11 +349,7 @@ class SettlerAgent:
             return
         body = canonical_json(wire)
         for pk in self.peer_pubkeys:
-            try:
-                self.axl.send(pk, body)
-                logger.info("broadcast vote to %s", pk[:16])
-            except Exception as e:
-                logger.warning("broadcast to %s failed: %s", pk[:16], e)
+            self._send_with_retry(pk, body, kind="broadcast vote")
 
     def _propagate_question(self, q: QuestionAnnouncement) -> None:
         """Forward a freshly-seen question to every configured peer.
@@ -366,11 +362,45 @@ class SettlerAgent:
             return
         body = canonical_json(q.to_dict())
         for pk in self.peer_pubkeys:
+            self._send_with_retry(pk, body, kind=f"propagate q={q.question_id[:16]}")
+
+    def _send_with_retry(
+        self,
+        pubkey: str,
+        body: bytes | str,
+        *,
+        kind: str,
+        max_attempts: int = 3,
+        base_delay: float = 0.4,
+    ) -> bool:
+        """AXL /send retries with exponential backoff.
+
+        AXL daemons return 502 when the inter-node session for a pubkey isn't
+        ready yet (mesh routing converges lazily). Single-shot sends drop the
+        message; quick retries usually succeed once the session warms up.
+        """
+        last_err: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
             try:
-                self.axl.send(pk, body)
-                logger.info("propagated question %s to %s", q.question_id[:16], pk[:16])
-            except Exception as e:
-                logger.warning("propagation to %s failed: %s", pk[:16], e)
+                self.axl.send(pubkey, body)
+                if attempt == 1:
+                    logger.info("%s -> %s ok", kind, pubkey[:16])
+                else:
+                    logger.info("%s -> %s ok (attempt %d)", kind, pubkey[:16], attempt)
+                return True
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if attempt < max_attempts:
+                    delay = base_delay * (2 ** (attempt - 1))
+                    time.sleep(delay)
+        logger.warning(
+            "%s -> %s failed after %d attempts: %s",
+            kind,
+            pubkey[:16],
+            max_attempts,
+            last_err,
+        )
+        return False
 
     def _maybe_emit_consensus(self, question_id: str) -> None:
         state = self._questions.get(question_id)
