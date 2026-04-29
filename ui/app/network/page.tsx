@@ -205,7 +205,7 @@ function Summary({ view, lastTickMs }: { view: NetworkView; lastTickMs: number }
   const total = view.nodes.length;
 
   return (
-    <section className="grid grid-cols-1 gap-6 rounded-md border border-ink-700 bg-ink-900/50 p-6 md:grid-cols-[1fr_auto]">
+    <section className="rounded-md border border-ink-700 bg-ink-900/50 p-6">
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <PulseDot tone="accent" />
@@ -227,10 +227,6 @@ function Summary({ view, lastTickMs }: { view: NetworkView; lastTickMs: number }
         <p className="text-micro text-ink-500">
           last refresh {new Date(lastTickMs).toLocaleTimeString()} · polling /api/network every {POLL_MS / 1000}s
         </p>
-      </div>
-
-      <div className="flex items-center justify-center">
-        <MeshDiagram view={view} />
       </div>
     </section>
   );
@@ -293,6 +289,32 @@ export default function NetworkPage() {
 
       {view ? (
         <>
+          {/* SIGNATURE MOMENT — display-xl ratio of online+verified nodes with halo */}
+          <section className="rounded-md border border-accent-700 bg-accent-700/8 px-6 py-8">
+            <div className="flex flex-col items-center gap-2 md:flex-row md:items-center md:justify-between md:gap-12">
+              <div className="flex flex-col items-center md:items-start">
+                <span className="text-eyebrow uppercase tracking-wide text-accent-400">network is live</span>
+                {(() => {
+                  const onlineCount = view.nodes.filter((n) => n.online).length;
+                  const verifiedCount = view.nodes.filter((n) => n.registered && n.pubkeyMatchesRegistry).length;
+                  const total = view.nodes.length;
+                  const allGood = onlineCount === total && verifiedCount === total;
+                  return (
+                    <span className={`num text-display font-semibold tracking-tight md:text-display-xl ${allGood ? "halo-accent text-accent-400" : "text-ink-100"}`}>
+                      {verifiedCount} <span className="text-ink-400">/</span> {total}
+                    </span>
+                  );
+                })()}
+                <span className="text-body-sm text-accent-300/80">
+                  settlers verified on-chain, meshed over Gensyn AXL
+                </span>
+              </div>
+              <div className="flex items-center justify-center">
+                <MeshDiagram view={view} />
+              </div>
+            </div>
+          </section>
+
           <Summary view={view} lastTickMs={lastTickMs} />
           <section>
             <h2 className="mb-3 text-eyebrow uppercase tracking-wide text-ink-400">Settler nodes</h2>
