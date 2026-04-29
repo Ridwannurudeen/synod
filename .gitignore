@@ -70,3 +70,6 @@ ui/node_modules/
 ui/.next/
 ui/.turbo/
 ui/next-env.d.ts
+
+# Demo orchestrator runtime state
+ui/.synod-demo-runtime.json
