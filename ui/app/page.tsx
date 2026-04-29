@@ -1,13 +1,11 @@
 "use client";
 
 /**
- * Synod live deliberation viewer.
+ * Synod live deliberation viewer (dashboard archetype).
  *
- * Polls /api/state every 500ms and renders:
- *   - the active question form
- *   - one card per settler with status, vote, confidence
- *   - the off-chain consensus banner once quorum is reached
- *   - the on-chain receipt panel when a tx is confirmed
+ * Polls /api/state every 500ms. Signature moment: when consensus is reached
+ * the outcome renders in display-xl with a halo; before that the page is
+ * pure terminal density (settler cards, status pills, tabular numbers).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -19,21 +17,21 @@ import type {
 } from "@/lib/types";
 
 const STATUS_TO_LABEL: Record<SettlerView["status"], string> = {
-  idle: "Idle",
-  received: "Question received",
-  inferring: "Running inference",
-  voted: "Vote signed",
-  consensus: "Consensus reached",
-  posted: "Posted on-chain",
+  idle: "idle",
+  received: "question received",
+  inferring: "running inference",
+  voted: "vote signed",
+  consensus: "consensus reached",
+  posted: "posted on-chain",
 };
 
 const STATUS_TO_TONE: Record<SettlerView["status"], string> = {
-  idle: "border-zinc-700 bg-zinc-900/60 text-zinc-400",
-  received: "border-sky-700/60 bg-sky-950/60 text-sky-300",
-  inferring: "border-violet-700/60 bg-violet-950/60 text-violet-300 animate-pulse",
-  voted: "border-emerald-700/60 bg-emerald-950/60 text-emerald-300",
-  consensus: "border-emerald-500 bg-emerald-900/60 text-emerald-200",
-  posted: "border-amber-500 bg-amber-900/40 text-amber-200",
+  idle:      "border-ink-700 bg-ink-900/50 text-ink-400",
+  received:  "border-accent-700/40 bg-accent-700/8 text-accent-300",
+  inferring: "border-accent-500/40 bg-accent-500/8 text-accent-300 animate-pulse",
+  voted:     "border-accent-600/60 bg-accent-700/10 text-accent-300",
+  consensus: "border-accent-500 bg-accent-500/15 text-accent-200",
+  posted:    "border-warn-500/60 bg-warn-500/10 text-warn-400",
 };
 
 function shortHex(s: string | undefined, head = 6, tail = 4): string {
@@ -133,39 +131,68 @@ export default function HomePage() {
   const consensus = state?.consensus ?? null;
   const onchain = state?.onchain ?? {};
   const txUrl = explorerTxUrl(onchain.chainId, onchain.postedTxHash);
+  const consensusReached = consensus?.outcome !== undefined;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10 text-zinc-100">
-      <header className="flex flex-col gap-2">
+    <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10">
+      <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-3xl font-semibold tracking-tight">Synod</h1>
-          <span className="text-sm text-zinc-500">
-            decentralized AI settlement for Delphi
-          </span>
+          <h1 className="text-h1 font-semibold tracking-tight text-ink-50">Synod</h1>
+          <span className="text-body-sm text-ink-400">decentralized AI settlement for Delphi</span>
           <a
             href="/network"
-            className="ml-auto rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-emerald-700 hover:text-emerald-300"
+            className="ml-auto rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-400"
           >
             AXL mesh →
           </a>
           <a
             href="/verify"
-            className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-300 transition hover:border-emerald-700 hover:text-emerald-300"
+            className="rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-400"
           >
             Verify proof →
           </a>
         </div>
-        <p className="max-w-3xl text-sm text-zinc-400">
-          Heterogeneous AI models running on independent machines coordinate over
-          Gensyn AXL, sign their settlement votes with ed25519 identities, and
-          post the quorum-signed result to{" "}
-          <code className="text-zinc-300">SynodRegistry</code> on Gensyn L2.
+        <p className="max-w-3xl text-body-sm text-ink-400">
+          Heterogeneous AI models running on independent machines coordinate over Gensyn AXL,
+          sign their settlement votes with ed25519 identities, and post the quorum-signed result
+          to <code className="num rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">SynodRegistry</code> on Gensyn L2.
         </p>
       </header>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-5">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-400">
-          Submit a market resolution prompt
+      {/* SIGNATURE MOMENT — display-xl outcome with halo when consensus reached */}
+      {consensusReached && (
+        <section className="rounded-md border border-accent-700 bg-accent-700/10 px-6 py-8">
+          <div className="flex flex-col items-center gap-2 md:flex-row md:items-center md:justify-between md:gap-12">
+            <div className="flex flex-col items-center md:items-start">
+              <span className="text-eyebrow uppercase tracking-wide text-accent-400">consensus outcome</span>
+              <span className="halo-accent num text-display font-semibold tracking-tight text-accent-400 md:text-display-xl">
+                {consensus!.outcome}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-x-8 gap-y-1 text-center md:text-left">
+              <div className="flex flex-col">
+                <span className="text-eyebrow uppercase tracking-wide text-accent-400/80">quorum</span>
+                <span className="num text-h2 font-semibold text-ink-100">{consensus!.quorumSize ?? "—"}</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-eyebrow uppercase tracking-wide text-accent-400/80">weighted</span>
+                <span className="num text-h2 font-semibold text-ink-100">
+                  {consensus!.weightedScore?.toFixed(2) ?? "—"}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-eyebrow uppercase tracking-wide text-accent-400/80">settlers</span>
+                <span className="num text-h2 font-semibold text-ink-100">{settlers.length}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* INJECT FORM */}
+      <section className="rounded-md border border-ink-700 bg-ink-900/50 p-5">
+        <h2 className="mb-3 text-eyebrow uppercase tracking-wide text-ink-400">
+          submit a market resolution prompt
         </h2>
         <form onSubmit={submit} className="flex flex-col gap-3">
           <textarea
@@ -173,128 +200,111 @@ export default function HomePage() {
             onChange={(e) => setForm({ ...form, prompt: e.target.value })}
             rows={2}
             placeholder="Will protocol X reach $100M TVL by end of year?"
-            className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-emerald-500"
+            className="w-full resize-none rounded-md border border-ink-700 bg-ink-950 px-3 py-2.5 text-body text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
           />
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <label className="flex items-center gap-2 text-caption text-ink-400">
               outcomes:
               <input
                 value={form.outcomes}
                 onChange={(e) => setForm({ ...form, outcomes: e.target.value })}
-                className="w-32 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-emerald-500"
+                className="num w-32 rounded-md border border-ink-700 bg-ink-950 px-2 py-1 text-ink-100 outline-none focus:border-accent-500"
               />
             </label>
-            <label className="flex items-center gap-2 text-xs text-zinc-400">
+            <label className="flex items-center gap-2 text-caption text-ink-400">
               deadline (s):
               <input
                 type="number"
                 min={30}
                 max={3600}
                 value={form.deadlineSecs}
-                onChange={(e) =>
-                  setForm({ ...form, deadlineSecs: Number(e.target.value) || 180 })
-                }
-                className="w-24 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-emerald-500"
+                onChange={(e) => setForm({ ...form, deadlineSecs: Number(e.target.value) || 180 })}
+                className="num w-24 rounded-md border border-ink-700 bg-ink-950 px-2 py-1 text-ink-100 outline-none focus:border-accent-500"
               />
             </label>
             <button
               type="submit"
               disabled={submitting}
-              className="ml-auto rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700"
+              className="ml-auto rounded-md bg-accent-500 px-4 py-2 text-body-sm font-medium text-ink-950 transition-colors hover:bg-accent-400 disabled:cursor-not-allowed disabled:bg-ink-700 disabled:text-ink-400"
             >
-              {submitting ? "Injecting…" : "Inject question"}
+              {submitting ? "injecting…" : "inject question"}
             </button>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="text-zinc-500">try:</span>
+          <div className="flex flex-wrap gap-2 text-caption">
+            <span className="text-ink-500">try:</span>
             {SAMPLE_PROMPTS.map((p) => (
               <button
                 key={p}
                 type="button"
                 onClick={() => setForm({ ...form, prompt: p })}
-                className="rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-zinc-400 transition hover:border-emerald-700 hover:text-emerald-300"
+                className="rounded-md border border-ink-700 bg-ink-900 px-2.5 py-1 text-ink-400 transition-colors hover:border-accent-700 hover:text-accent-400"
               >
                 {p.length > 60 ? `${p.slice(0, 60)}…` : p}
               </button>
             ))}
           </div>
           {submitError && (
-            <p className="rounded-md border border-rose-700 bg-rose-950/40 px-3 py-2 text-sm text-rose-300">
+            <p className="rounded-md border border-alert-600 bg-alert-600/10 px-3 py-2 text-body-sm text-alert-400">
               {submitError}
             </p>
           )}
         </form>
       </section>
 
+      {/* ACTIVE QUESTION */}
       {consensus && (
-        <section className="rounded-2xl border border-zinc-800 bg-zinc-950/40 p-5">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-400">
-            Active question
-          </h2>
-          <p className="mb-3 text-base text-zinc-100">{consensus.prompt || "—"}</p>
-          <div className="flex flex-wrap gap-3 text-xs text-zinc-400">
+        <section className="rounded-md border border-ink-700 bg-ink-900/50 p-5">
+          <h2 className="mb-2 text-eyebrow uppercase tracking-wide text-ink-400">active question</h2>
+          <p className="mb-3 text-body text-ink-100">{consensus.prompt || "—"}</p>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-caption text-ink-400">
             <span>
-              question_id:{" "}
-              <code className="text-zinc-300">
-                {shortHex(consensus.questionId, 8, 6)}
-              </code>
+              question id <code className="num text-ink-200">{shortHex(consensus.questionId, 8, 6)}</code>
             </span>
             <span>
-              outcomes:{" "}
-              <code className="text-zinc-300">{consensus.outcomes.join(", ")}</code>
+              outcomes <code className="num text-ink-200">{consensus.outcomes.join(", ")}</code>
             </span>
             {consensus.quorumSize !== undefined && (
               <span>
-                quorum so far:{" "}
-                <code className="text-zinc-300">{consensus.quorumSize}</code>
+                quorum so far <code className="num text-ink-200">{consensus.quorumSize}</code>
               </span>
             )}
           </div>
         </section>
       )}
 
+      {/* SETTLER NODES */}
       <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-400">
-          Settler nodes
-        </h2>
+        <h2 className="mb-3 text-eyebrow uppercase tracking-wide text-ink-400">settler nodes</h2>
         {settlers.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-zinc-800 bg-zinc-950/40 px-4 py-6 text-sm text-zinc-500">
+          <p className="rounded-md border border-dashed border-ink-700 bg-ink-900/30 px-4 py-6 text-body-sm text-ink-500">
             No settler activity yet. Inject a question to start a deliberation.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {settlers.map((s) => (
-              <div
-                key={s.pubkey}
-                className={`rounded-xl border p-4 transition ${STATUS_TO_TONE[s.status]}`}
-              >
+              <div key={s.pubkey} className={`rounded-md border p-4 transition ${STATUS_TO_TONE[s.status]}`}>
                 <div className="flex items-baseline justify-between">
-                  <h3 className="font-mono text-sm font-medium text-zinc-200">
-                    {shortHex(s.pubkey, 8, 6)}
-                  </h3>
+                  <h3 className="num text-body-sm font-medium text-ink-100">{shortHex(s.pubkey, 8, 6)}</h3>
                   <span
-                    className={`text-[10px] font-medium uppercase tracking-wider ${
-                      s.online ? "text-emerald-400" : "text-zinc-500"
+                    className={`text-eyebrow uppercase tracking-wide ${
+                      s.online ? "text-accent-400" : "text-ink-500"
                     }`}
                   >
                     {s.online ? "online" : "offline"}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-zinc-400">
-                  {s.modelTag ?? "model: tbd"}
-                </p>
-                <p className="mt-3 text-xs uppercase tracking-wide text-current">
+                <p className="mt-1 text-caption text-ink-400">{s.modelTag ?? "model: tbd"}</p>
+                <p className="mt-3 text-eyebrow uppercase tracking-wide text-current">
                   {STATUS_TO_LABEL[s.status]}
                 </p>
                 {s.votedOutcome !== undefined && (
-                  <div className="mt-2 flex items-baseline gap-3 text-sm">
-                    <span className="text-zinc-300">
-                      outcome:{" "}
-                      <strong className="text-zinc-100">{s.votedOutcome}</strong>
+                  <div className="mt-2 flex items-baseline gap-4 text-body-sm">
+                    <span className="text-ink-400">
+                      outcome <strong className="num text-ink-100">{s.votedOutcome}</strong>
                     </span>
                     {s.votedConfidence !== undefined && (
-                      <span className="text-zinc-400">
-                        confidence: <code>{s.votedConfidence.toFixed(3)}</code>
+                      <span className="text-ink-400">
+                        confidence <code className="num text-ink-100">{s.votedConfidence.toFixed(3)}</code>
                       </span>
                     )}
                   </div>
@@ -305,117 +315,62 @@ export default function HomePage() {
         )}
       </section>
 
-      {consensus?.outcome !== undefined && (
-        <section className="rounded-2xl border border-emerald-700/60 bg-emerald-950/40 p-5">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-widest text-emerald-300">
-            Consensus reached
-          </h2>
-          <div className="flex flex-wrap items-baseline gap-6">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-emerald-400">
-                outcome
-              </div>
-              <div className="font-mono text-3xl font-semibold text-white">
-                {consensus.outcome}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-emerald-400">
-                quorum
-              </div>
-              <div className="font-mono text-2xl text-emerald-100">
-                {consensus.quorumSize}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-emerald-400">
-                weighted score
-              </div>
-              <div className="font-mono text-2xl text-emerald-100">
-                {consensus.weightedScore?.toFixed(3) ?? "—"}
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
+      {/* ON-CHAIN RECEIPT */}
       {onchain.postedTxHash && (
-        <section className="rounded-2xl border border-amber-700/60 bg-amber-950/30 p-5">
-          <h2 className="mb-2 text-xs font-medium uppercase tracking-widest text-amber-300">
-            Recorded on-chain
-          </h2>
-          <div className="grid gap-2 text-sm text-zinc-200 sm:grid-cols-2">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-amber-300">
-                tx hash
+        <section className="rounded-md border border-warn-500/40 bg-warn-500/5 p-5">
+          <h2 className="mb-3 text-eyebrow uppercase tracking-wide text-warn-400">recorded on-chain</h2>
+          <div className="grid gap-3 text-body-sm sm:grid-cols-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-eyebrow uppercase tracking-wide text-ink-500">tx hash</span>
+              <div className="flex items-center gap-2">
+                <code className="num text-ink-100">{shortHex(onchain.postedTxHash, 12, 10)}</code>
+                {txUrl && (
+                  <a href={txUrl} target="_blank" rel="noreferrer" className="text-caption text-accent-400 underline-offset-2 hover:underline">
+                    view ↗
+                  </a>
+                )}
               </div>
-              <code className="text-amber-100">
-                {shortHex(onchain.postedTxHash, 12, 10)}
-              </code>
-              {txUrl && (
-                <a
-                  href={txUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-2 text-xs text-amber-300 underline hover:text-amber-200"
-                >
-                  view ↗
-                </a>
-              )}
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-amber-300">
-                posted by
-              </div>
-              <code className="text-amber-100">{shortHex(onchain.postedBy)}</code>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-eyebrow uppercase tracking-wide text-ink-500">posted by</span>
+              <code className="num text-ink-100">{shortHex(onchain.postedBy)}</code>
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-amber-300">
-                registry
-              </div>
-              <code className="text-amber-100">
-                {shortHex(onchain.registryAddress)}
-              </code>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-eyebrow uppercase tracking-wide text-ink-500">registry</span>
+              <code className="num text-ink-100">{shortHex(onchain.registryAddress)}</code>
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-amber-300">
-                chain id
-              </div>
-              <code className="text-amber-100">{onchain.chainId ?? "—"}</code>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-eyebrow uppercase tracking-wide text-ink-500">chain id</span>
+              <code className="num text-ink-100">{onchain.chainId ?? "—"}</code>
             </div>
           </div>
           {onchain.proof && (
-            <div className="mt-5 border-t border-amber-800/50 pt-4">
+            <div className="mt-5 border-t border-ink-700 pt-4">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-xs font-medium uppercase tracking-widest text-amber-300">
-                  Proof verification
-                </h3>
+                <h3 className="text-eyebrow uppercase tracking-wide text-ink-400">proof verification</h3>
                 <span
-                  className={`rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider ${
+                  className={`rounded-md border px-2 py-0.5 text-eyebrow uppercase tracking-wide ${
                     onchain.proof.status === "verified"
-                      ? "border-emerald-600 bg-emerald-950/60 text-emerald-300"
-                      : "border-rose-700 bg-rose-950/60 text-rose-300"
+                      ? "border-accent-700 bg-accent-700/15 text-accent-300"
+                      : "border-alert-600 bg-alert-600/15 text-alert-400"
                   }`}
                 >
                   {onchain.proof.status}
                 </span>
               </div>
-              <div className="grid gap-2 text-xs text-zinc-300 sm:grid-cols-3">
-                <span>
-                  winner votes:{" "}
-                  <code>{onchain.proof.winnerVotes ?? "—"}</code>
+              <div className="grid gap-2 text-caption sm:grid-cols-3">
+                <span className="text-ink-400">
+                  winner votes <code className="num text-ink-100">{onchain.proof.winnerVotes ?? "—"}</code>
                 </span>
-                <span>
-                  quorum required:{" "}
-                  <code>{onchain.proof.quorumSize ?? "—"}</code>
+                <span className="text-ink-400">
+                  quorum required <code className="num text-ink-100">{onchain.proof.quorumSize ?? "—"}</code>
                 </span>
-                <span>
-                  recomputed score:{" "}
-                  <code>{onchain.proof.weightedScoreScaled ?? "—"}</code>
+                <span className="text-ink-400">
+                  recomputed score <code className="num text-ink-100">{onchain.proof.weightedScoreScaled ?? "—"}</code>
                 </span>
               </div>
               {onchain.proof.errors.length > 0 && (
-                <ul className="mt-3 space-y-1 text-xs text-rose-300">
+                <ul className="mt-3 space-y-1 text-caption text-alert-400">
                   {onchain.proof.errors.slice(0, 4).map((err) => (
                     <li key={err}>{err}</li>
                   ))}
@@ -423,26 +378,17 @@ export default function HomePage() {
               )}
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {onchain.proof.votes.map((v) => (
-                  <div
-                    key={v.pubkey}
-                    className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-xs"
-                  >
+                  <div key={v.pubkey} className="rounded-md border border-ink-700 bg-ink-950/50 p-3 text-caption">
                     <div className="flex items-center justify-between">
-                      <code className="text-zinc-200">{shortHex(v.pubkey, 8, 6)}</code>
-                      <span
-                        className={
-                          v.registered && v.signatureValid
-                            ? "text-emerald-300"
-                            : "text-rose-300"
-                        }
-                      >
+                      <code className="num text-ink-100">{shortHex(v.pubkey, 8, 6)}</code>
+                      <span className={v.registered && v.signatureValid ? "text-accent-400" : "text-alert-400"}>
                         {v.registered && v.signatureValid ? "valid" : "invalid"}
                       </span>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-3 text-zinc-400">
-                      <span>outcome: {v.outcome ?? "—"}</span>
-                      <span>confidence: {v.confidence?.toFixed(3) ?? "—"}</span>
-                      <span>{v.modelTag ?? "model unknown"}</span>
+                    <div className="mt-2 flex flex-wrap gap-3 text-ink-400">
+                      <span>outcome <span className="num text-ink-200">{v.outcome ?? "—"}</span></span>
+                      <span>conf <span className="num text-ink-200">{v.confidence?.toFixed(3) ?? "—"}</span></span>
+                      <span className="text-ink-500">{v.modelTag ?? "model unknown"}</span>
                     </div>
                   </div>
                 ))}
@@ -452,9 +398,14 @@ export default function HomePage() {
         </section>
       )}
 
-      <footer className="mt-auto pt-6 text-xs text-zinc-600">
-        polling /api/state · {state ? "connected" : "starting"} ·{" "}
-        {activeQuestionId && `q=${shortHex(activeQuestionId, 6, 4)}`}
+      <footer className="mt-auto pt-6 text-micro text-ink-500">
+        polling /api/state · {state ? "connected" : "starting"}
+        {activeQuestionId && (
+          <>
+            {" · "}
+            q=<code className="num">{shortHex(activeQuestionId, 6, 4)}</code>
+          </>
+        )}
       </footer>
     </main>
   );

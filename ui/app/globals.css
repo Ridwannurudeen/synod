@@ -1,26 +1,216 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================
+   Synod design tokens — Tailwind v4 @theme inline
+   Custom palette + custom type scale + custom radii.
+   No default Tailwind colors used in components.
+   ============================================================ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* ---- Neutrals (ink) — cool blue-tinted, NOT pure grayscale ---- */
+  --color-ink-50:  #F4F6FA;
+  --color-ink-100: #E5E9F0;
+  --color-ink-200: #C8CFDD;
+  --color-ink-300: #9AA4B8;
+  --color-ink-400: #6B7689;
+  --color-ink-500: #444E61;
+  --color-ink-600: #2A3142;
+  --color-ink-700: #1B202D;
+  --color-ink-800: #14171F;
+  --color-ink-900: #0E1118;
+  --color-ink-950: #08090E;
+
+  /* ---- Single primary accent — verification green ---- */
+  --color-accent-300: #5BFFCB;
+  --color-accent-400: #33EBB6;
+  --color-accent-500: #00E5A0;
+  --color-accent-600: #00B37C;
+  --color-accent-700: #008259;
+
+  /* ---- Single semantic alert — invalid proof / disconnected ---- */
+  --color-alert-400: #FF7A88;
+  --color-alert-500: #FF5A6B;
+  --color-alert-600: #E03A4D;
+
+  /* ---- Status accent — amber for warnings (mismatch, slow, low quota) ---- */
+  --color-warn-400: #F2B137;
+  --color-warn-500: #DE8E12;
+
+  /* ---- Type ---- */
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --text-eyebrow: 10px;
+  --text-eyebrow--line-height: 1.2;
+  --text-eyebrow--letter-spacing: 0.08em;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 1.3;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 1.5;
+
+  --text-body: 14px;
+  --text-body--line-height: 1.55;
+
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 1.6;
+
+  --text-h4: 17px;
+  --text-h4--line-height: 1.3;
+  --text-h4--letter-spacing: -0.01em;
+
+  --text-h3: 20px;
+  --text-h3--line-height: 1.3;
+  --text-h3--letter-spacing: -0.015em;
+
+  --text-h2: 28px;
+  --text-h2--line-height: 1.2;
+  --text-h2--letter-spacing: -0.02em;
+
+  --text-h1: 36px;
+  --text-h1--line-height: 1.1;
+  --text-h1--letter-spacing: -0.025em;
+
+  --text-display: 56px;
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.035em;
+
+  --text-display-xl: 80px;
+  --text-display-xl--line-height: 0.98;
+  --text-display-xl--letter-spacing: -0.04em;
+
+  /* ---- Radii — kill default 16px+, reserve xl for modals ---- */
+  --radius-none: 0px;
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   Base layer — body, atmosphere, reduced-motion
+   ============================================================ */
+
+html {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  min-height: 100dvh;
+}
+
+/* Atmosphere layer 1: dot grid, fades from top */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: radial-gradient(rgba(155, 168, 192, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  -webkit-mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, #000 35%, transparent 90%);
+  mask-image: radial-gradient(ellipse 100% 80% at 50% 0%, #000 35%, transparent 90%);
+}
+
+/* Atmosphere layer 2: accent radial glow at top-center */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 65% 45% at 50% -8%, rgba(0, 229, 160, 0.10), transparent 70%);
+}
+
+main, header, footer, nav {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+
+/* Numeric values get tabular figures + monospace */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Halo around signature display elements */
+.halo-accent {
+  filter: drop-shadow(0 0 32px rgba(0, 229, 160, 0.45));
+}
+.halo-alert {
+  filter: drop-shadow(0 0 32px rgba(255, 90, 107, 0.45));
+}
+.halo-warn {
+  filter: drop-shadow(0 0 32px rgba(242, 177, 55, 0.45));
+}
+
+/* Live pulse — solid dot + ping ring at same color */
+.pulse-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+}
+.pulse-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--color-accent-500);
+}
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  background: var(--color-accent-500);
+  opacity: 0.55;
+  animation: ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.pulse-dot.pulse-dot-alert::before { background: var(--color-alert-500); }
+.pulse-dot.pulse-dot-alert::after { background: var(--color-alert-500); }
+.pulse-dot.pulse-dot-warn::before { background: var(--color-warn-500); }
+.pulse-dot.pulse-dot-warn::after { background: var(--color-warn-500); }
+
+@keyframes ping {
+  0% { transform: scale(0.95); opacity: 0.55; }
+  75%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+/* One-shot flash on poll-driven value updates */
+@keyframes value-flash {
+  0% { background-color: rgba(0, 229, 160, 0.25); }
+  100% { background-color: transparent; }
+}
+.flash-on-update {
+  animation: value-flash 1200ms ease-out;
+}
+
+/* ============================================================
+   Accessibility — reduced motion
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
