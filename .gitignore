@@ -64,3 +64,9 @@ contracts/lib/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# Next.js UI build artifacts
+ui/node_modules/
+ui/.next/
+ui/.turbo/
+ui/next-env.d.ts
