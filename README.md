@@ -112,6 +112,7 @@ GOOGLE_API_KEY=...
 Then run:
 
 ```bash
+python tools/demo-doctor.py --demo 3node
 bash tools/demo-up-3node.sh
 ```
 
@@ -120,6 +121,13 @@ starts AXL nodes on ports `9002`, `9012`, and `9022`, and starts the UI on
 `http://localhost:3000`. By default quorum is `2 of 3`; set
 `SYNOD_DEMO_QUORUM=3` for strict unanimity. The full judge script is in
 [`docs/judge-demo.md`](./docs/judge-demo.md).
+
+For a full pre-recording check that also runs the Python tests, Foundry tests,
+and UI build:
+
+```bash
+python tools/demo-doctor.py --demo 3node --with-tests
+```
 
 ## Running just the on-chain integration test
 

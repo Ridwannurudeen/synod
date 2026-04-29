@@ -6,6 +6,18 @@ independently verifiable after it lands on-chain.
 
 ## Recommended Live Path
 
+0. Run the preflight check:
+
+   ```bash
+   python tools/demo-doctor.py --demo 3node
+   ```
+
+   For the final recording pass, use:
+
+   ```bash
+   python tools/demo-doctor.py --demo 3node --with-tests
+   ```
+
 1. Start the three-node demo:
 
    ```bash
