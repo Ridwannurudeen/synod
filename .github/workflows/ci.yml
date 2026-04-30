@@ -21,7 +21,7 @@ jobs:
         with:
           version: stable
       - name: Install forge-std (not vendored)
-        run: forge install foundry-rs/forge-std --no-commit
+        run: forge install foundry-rs/forge-std
       - name: forge build
         run: forge build --sizes
       - name: forge test (with fuzz)
