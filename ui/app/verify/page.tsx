@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { ProofVerificationView, ProofVoteView } from "@/lib/types";
@@ -24,6 +24,30 @@ type ServerView = ProofVerificationView & {
     timestamp: number;
   };
   error?: string;
+};
+
+type TranscriptInfo = {
+  questionId: string;
+  root: string;
+  tx: string;
+  indexerUrl: string;
+  bytes: number;
+  uploadedAt: number;
+  storage: string;
+  storageScanUrl: string;
+};
+
+type JudgmentInfo = {
+  questionId: string;
+  fqn: string;
+  label: string;
+  owner: string;
+  mintTx: string;
+  recordsTx: string;
+  ensAppUrl: string;
+  textRecords: Record<string, string>;
+  etherscanMintUrl: string;
+  etherscanRecordsUrl: string;
 };
 
 function shortHex(s: string | undefined, head = 8, tail = 8): string {
@@ -113,6 +137,125 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
       <span className="text-eyebrow uppercase tracking-wide text-ink-500">{label}</span>
       <span className={`${mono ? "num" : ""} text-body text-ink-100`}>{value}</span>
     </div>
+  );
+}
+
+function ProvenancePanel({ qidHex }: { qidHex: string }) {
+  const [transcript, setTranscript] = useState<TranscriptInfo | null>(null);
+  const [judgment, setJudgment] = useState<JudgmentInfo | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [judgmentError, setJudgmentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const qidNorm = qidHex.toLowerCase().replace(/^0x/, "");
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/transcript/${qidNorm}`, { cache: "no-store" });
+        if (!cancelled) {
+          if (r.ok) setTranscript((await r.json()) as TranscriptInfo);
+          else setTranscriptError((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+        }
+      } catch (e) {
+        if (!cancelled) setTranscriptError(e instanceof Error ? e.message : "fetch failed");
+      }
+      try {
+        const r = await fetch(`/api/judgment/${qidNorm}`, { cache: "no-store" });
+        if (!cancelled) {
+          if (r.ok) setJudgment((await r.json()) as JudgmentInfo);
+          else setJudgmentError((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
+        }
+      } catch (e) {
+        if (!cancelled) setJudgmentError(e instanceof Error ? e.message : "fetch failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qidHex]);
+
+  if (!transcript && !judgment && !transcriptError && !judgmentError) return null;
+
+  return (
+    <section className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      {/* 0G transcript card */}
+      <div className="rounded-md border border-ink-700 bg-ink-900/50 p-4">
+        <div className="flex items-baseline justify-between">
+          <span className="text-eyebrow uppercase tracking-wide text-ink-400">
+            0G Storage transcript
+          </span>
+          <span className="text-micro text-ink-500">decentralized memory</span>
+        </div>
+        {transcript ? (
+          <div className="mt-2 flex flex-col gap-1.5 text-caption">
+            <div className="flex items-baseline gap-2">
+              <span className="text-ink-500">root</span>
+              <code className="num truncate text-ink-200">{transcript.root.slice(0, 18)}…{transcript.root.slice(-6)}</code>
+              <span className="ml-auto text-ink-500">{(transcript.bytes / 1024).toFixed(1)} KB</span>
+            </div>
+            <a
+              href={transcript.indexerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 rounded border border-accent-700/50 bg-accent-700/10 px-2 py-1 text-caption text-accent-300 hover:bg-accent-700/20"
+            >
+              fetch raw transcript →
+            </a>
+            {transcript.tx && (
+              <a
+                href={`https://chainscan-galileo.0g.ai/tx/${transcript.tx}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-caption text-accent-400 hover:text-accent-300"
+              >
+                0G Chain submission tx ↗
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 text-caption text-ink-500">{transcriptError ?? "loading…"}</div>
+        )}
+      </div>
+
+      {/* ENS judgment card */}
+      <div className="rounded-md border border-ink-700 bg-ink-900/50 p-4">
+        <div className="flex items-baseline justify-between">
+          <span className="text-eyebrow uppercase tracking-wide text-ink-400">
+            ENS judgment
+          </span>
+          <span className="text-micro text-ink-500">transferable receipt</span>
+        </div>
+        {judgment ? (
+          <div className="mt-2 flex flex-col gap-1.5 text-caption">
+            <code className="num truncate text-ink-200">{judgment.fqn}</code>
+            <div className="flex items-baseline gap-2 text-ink-500">
+              <span>owner</span>
+              <code className="num truncate text-ink-300">
+                {judgment.owner.slice(0, 8)}…{judgment.owner.slice(-6)}
+              </code>
+            </div>
+            <a
+              href={judgment.ensAppUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-fit items-center gap-1.5 rounded border border-accent-700/50 bg-accent-700/10 px-2 py-1 text-caption text-accent-300 hover:bg-accent-700/20"
+            >
+              open in ENS app →
+            </a>
+            <a
+              href={judgment.etherscanMintUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-caption text-accent-400 hover:text-accent-300"
+            >
+              mint tx on Etherscan ↗
+            </a>
+          </div>
+        ) : (
+          <div className="mt-2 text-caption text-ink-500">{judgmentError ?? "loading…"}</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -230,6 +373,8 @@ export default function VerifyPage() {
             <Field label="registry" value={shortHex(view.registryAddress, 10, 8)} mono />
             <Field label="chain id" value={view.chainId !== undefined ? String(view.chainId) : "—"} mono />
           </div>
+
+          {view.questionId && <ProvenancePanel qidHex={view.questionId} />}
 
           {view.votes.length > 0 && (
             <section>

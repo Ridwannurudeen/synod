@@ -67,6 +67,67 @@ const SAMPLE_PROMPTS = [
   "Was the Ethereum Merge completed on September 15, 2022?",
 ];
 
+type ProtocolStats = {
+  questionsSettled: number;
+  judgmentsMinted: number;
+  transcriptsKB: number;
+  registeredSettlerCount?: number;
+  ensParent: string;
+  storageNetwork: string;
+};
+
+function ProtocolStatsStrip() {
+  const [stats, setStats] = useState<ProtocolStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/stats", { cache: "no-store" });
+        if (r.ok && !cancelled) setStats((await r.json()) as ProtocolStats);
+      } catch {
+        // ignore — homepage still renders without counters
+      }
+    };
+    tick();
+    const id = setInterval(tick, 12_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 text-caption">
+      <span className="flex items-center gap-1.5">
+        <span className="text-ink-500">questions settled</span>
+        <span className="num font-semibold text-ink-100">{stats?.questionsSettled ?? "—"}</span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-ink-500">judgments minted</span>
+        <span className="num font-semibold text-ink-100">{stats?.judgmentsMinted ?? "—"}</span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-ink-500">transcripts on 0G</span>
+        <span className="num font-semibold text-ink-100">
+          {stats ? `${stats.transcriptsKB} KB` : "—"}
+        </span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-ink-500">settlers registered</span>
+        <span className="num font-semibold text-ink-100">
+          {stats?.registeredSettlerCount ?? "—"}
+        </span>
+      </span>
+      {stats && (
+        <span className="ml-auto text-micro text-ink-500">
+          source: <code className="num text-ink-300">{stats.ensParent}</code>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [state, setState] = useState<DeliberationState | null>(null);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
@@ -157,6 +218,7 @@ export default function HomePage() {
           sign their settlement votes with ed25519 identities, and post the quorum-signed result
           to <code className="num rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">SynodRegistry</code> on Gensyn L2.
         </p>
+        <ProtocolStatsStrip />
       </header>
 
       {/* SIGNATURE MOMENT — display-xl outcome with halo when consensus reached */}
