@@ -908,7 +908,9 @@ export default function HomePage() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 500);
+    // 2s tick — fast enough that the deliberation feels live, slow enough
+    // that we don't pound the on-chain RPC under demo load.
+    const id = setInterval(refresh, 2000);
     return () => clearInterval(id);
   }, [refresh]);
 
