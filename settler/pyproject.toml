@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Synod settler agent — runs LLM inference on Delphi market questions, exchanges signed votes over AXL, reaches consensus."
 requires-python = ">=3.11"
 license = { text = "MIT" }
-readme = "../README.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
