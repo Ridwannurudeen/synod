@@ -165,6 +165,13 @@ function ProtocolReceipt({ stats }: { stats: ProtocolStats | null }) {
 
 function ReceiptRow({ label, value }: { label: string; value: string | number | undefined }) {
   const isEmpty = value === undefined || value === null;
+  const display = isEmpty ? "" : String(value);
+  // Briefly highlight the cell when its rendered value changes — gives the
+  // counter a subtle "tick" feel when stats refresh.
+  const [flashKey, setFlashKey] = useState(display);
+  useEffect(() => {
+    if (display && display !== flashKey) setFlashKey(display);
+  }, [display, flashKey]);
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-ink-500">{label}</span>
@@ -175,7 +182,9 @@ function ReceiptRow({ label, value }: { label: string; value: string | number | 
           title="loading…"
         />
       ) : (
-        <span className="num text-ink-100">{String(value)}</span>
+        <span key={flashKey} className="num flash-on-update rounded px-1 text-ink-100">
+          {display}
+        </span>
       )}
     </div>
   );
@@ -420,6 +429,59 @@ function MeshSvg({ nodes }: { nodes: NetworkNode[] }) {
 }
 
 /* ============================================================
+   HOW IT WORKS — 3 steps, each ties to a specific layer
+   ============================================================ */
+function HowItWorks() {
+  const steps = [
+    {
+      n: "01",
+      title: "Question in",
+      detail:
+        "A prompt enters the network. The settler swarm — Sonnet, Haiku, Gemini, Opus — picks it up over Gensyn AXL, an encrypted Yggdrasil mesh. No central coordinator.",
+      tag: "AXL P2P",
+    },
+    {
+      n: "02",
+      title: "Quorum out",
+      detail:
+        "Each settler reasons independently and signs its vote with its ed25519 identity. Per-outcome quorum: the winning answer needs N votes for that answer — not just N total — which holds against single-node prompt injection.",
+      tag: "ed25519 sigs",
+    },
+    {
+      n: "03",
+      title: "Receipt minted",
+      detail:
+        "The quorum-signed payload posts on Gensyn L2. The full transcript persists to 0G Storage, retrievable via public HTTP. The verdict is minted as j-{hash}.synodai.eth — addressable, transferable, and tied to the on-chain tx.",
+      tag: "L2 + 0G + ENS",
+    },
+  ];
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {steps.map((s, i) => (
+        <div
+          key={s.n}
+          className="relative flex flex-col gap-3 rounded-md border border-ink-700 bg-ink-900/40 p-6"
+        >
+          {/* hairline arrow connector between cards on desktop */}
+          {i < steps.length - 1 && (
+            <span
+              aria-hidden
+              className="absolute -right-2 top-1/2 hidden h-0.5 w-3 -translate-y-1/2 bg-ink-700 md:block"
+            />
+          )}
+          <div className="flex items-baseline justify-between">
+            <span className="num text-h1 font-semibold tracking-tight text-accent-400/40">{s.n}</span>
+            <span className="text-eyebrow uppercase tracking-[0.2em] text-ink-500">{s.tag}</span>
+          </div>
+          <h3 className="text-h3 font-semibold tracking-tight text-ink-50">{s.title}</h3>
+          <p className="text-body-sm leading-relaxed text-ink-300">{s.detail}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================
    RECENT JUDGMENTS — top 3 from /api/gallery
    ============================================================ */
 type GalleryItem = {
@@ -560,6 +622,8 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
       detail: "synodai.eth resolves the registry, RPC, threshold, and the canonical settler list. Edit a record on mainnet, the UI swings.",
       stat: stats?.registeredSettlerCount ? `${stats.registeredSettlerCount} subnames` : "synodai.eth",
       url: "https://app.ens.domains/synodai.eth",
+      mark: "ξ",
+      tone: "rgb(91, 130, 255)",
     },
     {
       name: "Gensyn AXL",
@@ -567,6 +631,8 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
       detail: "Encrypted Yggdrasil mesh between settlers. Two physical machines (Frankfurt + Toronto). End-to-end encrypted.",
       stat: "2 cities · 1 mesh",
       url: "/network",
+      mark: "△",
+      tone: "rgb(255, 145, 90)",
     },
     {
       name: "0G Storage",
@@ -574,6 +640,8 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
       detail: "Every full deliberation transcript persisted on Galileo. Public HTTP retrieval. No SDK, no auth.",
       stat: stats ? `${stats.transcriptsKB} kB on chain` : "0G Galileo",
       url: "https://storagescan-galileo.0g.ai/",
+      mark: "◇",
+      tone: "rgb(0, 229, 160)",
     },
     {
       name: "Gensyn L2",
@@ -581,6 +649,8 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
       detail: "Quorum-signed payloads recorded on chain 685689. Independent ed25519 verifier re-runs from raw bytes.",
       stat: "0xD387…b6ad",
       url: "https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad",
+      mark: "◯",
+      tone: "rgb(184, 138, 255)",
     },
   ];
   return (
@@ -591,10 +661,25 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
           href={p.url}
           target={p.url.startsWith("http") ? "_blank" : undefined}
           rel={p.url.startsWith("http") ? "noreferrer" : undefined}
-          className="group flex flex-col gap-3 rounded-md border border-ink-700 bg-ink-900/40 p-5 transition-colors hover:border-accent-700/50 hover:bg-ink-900/60"
+          className="group relative flex flex-col gap-3 overflow-hidden rounded-md border border-ink-700 bg-ink-900/40 p-5 transition-colors hover:border-accent-700/50 hover:bg-ink-900/60"
         >
-          <div className="flex items-baseline justify-between">
-            <span className="text-h3 font-semibold tracking-tight text-ink-50">{p.name}</span>
+          {/* partner accent bar — subtle vertical strip on the left edge */}
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 w-0.5 opacity-60 transition-opacity group-hover:opacity-100"
+            style={{ backgroundColor: p.tone }}
+          />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span
+                className="num text-h3 leading-none"
+                style={{ color: p.tone }}
+                aria-hidden
+              >
+                {p.mark}
+              </span>
+              <span className="text-h3 font-semibold tracking-tight text-ink-50">{p.name}</span>
+            </div>
             <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">{p.role}</span>
           </div>
           <p className="text-body-sm leading-relaxed text-ink-300">{p.detail}</p>
@@ -690,6 +775,18 @@ export default function HomePage() {
           <LiveMeshStrip />
         </section>
 
+        {/* HOW IT WORKS — 3-step explainer with ties to each layer */}
+        <section className="border-y border-ink-800/40 bg-ink-900/20">
+          <div className="mx-auto max-w-7xl px-6 py-16">
+            <SectionHeader
+              eyebrow="How it works"
+              title="From question to receipt in 3 steps"
+              sub="Every question follows the same path. Each step ties to a specific layer of the stack."
+            />
+            <HowItWorks />
+          </div>
+        </section>
+
         {/* TRY IT — inject form. The protocol is hands-on. */}
         <section id="try" className="mx-auto max-w-7xl px-6 pb-16">
           <SectionHeader
@@ -734,8 +831,11 @@ export default function HomePage() {
                   {submitting ? "injecting…" : "Inject question"}
                 </button>
               </div>
-              <div className="flex flex-wrap gap-2 border-t border-ink-800/60 pt-3 text-caption">
-                <span className="text-ink-500">samples:</span>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-ink-800/60 pt-3 text-caption">
+                <span className="text-ink-500">avg settle ~60s · ed25519 signed · auto-anchored to 0G</span>
+              </div>
+              <div className="flex flex-wrap gap-2 text-caption">
+                <span className="text-ink-500">try one:</span>
                 {SAMPLE_PROMPTS.map((p) => (
                   <button
                     key={p}
@@ -957,13 +1057,15 @@ export default function HomePage() {
         </section>
 
         {/* BUILT ON — 4 pillars */}
-        <section className="mx-auto max-w-7xl px-6 pb-16">
-          <SectionHeader
-            eyebrow="Stack"
-            title="Built on"
-            sub="Each layer carries a specific job. None are decoration — pull one and the system breaks."
-          />
-          <BuiltOn stats={stats} />
+        <section className="border-y border-ink-800/40 bg-ink-900/20">
+          <div className="mx-auto max-w-7xl px-6 py-16">
+            <SectionHeader
+              eyebrow="Stack"
+              title="Built on"
+              sub="Each layer carries a specific job. None are decoration — pull one and the system breaks."
+            />
+            <BuiltOn stats={stats} />
+          </div>
         </section>
       </main>
       <DeepFooter />

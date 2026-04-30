@@ -138,7 +138,7 @@ export function DeepFooter() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 text-micro text-ink-500">
           <span>SynodRegistry · <code className="num text-ink-400">0xD387f749667590940d7c68CA350e57FbcE62b6ad</code></span>
           <span>chain id <code className="num text-ink-400">685689</code></span>
-          <span className="ml-auto">no claim of legal personhood for AI agents</span>
+          <span className="ml-auto">MIT licensed · open infrastructure</span>
         </div>
       </div>
     </footer>
