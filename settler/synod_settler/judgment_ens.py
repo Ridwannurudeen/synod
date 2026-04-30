@@ -155,6 +155,21 @@ def mint_judgment(
         owner = acct.address
     owner = Web3.to_checksum_address(owner)
 
+    # Idempotency: skip mint if subname already wrapped to our deployer.
+    # Lets retries of a partially-failed records tx succeed without double-spending.
+    wrap_owner = wrap.functions.setSubnodeRecord  # type stub for type-checkers
+    wrap_data = w3.eth.contract(
+        address=NAMEWRAPPER,
+        abi=[{"name": "getData", "type": "function", "stateMutability": "view",
+              "inputs": [{"name": "id", "type": "uint256"}],
+              "outputs": [{"name": "owner", "type": "address"},
+                          {"name": "fuses", "type": "uint32"},
+                          {"name": "expiry", "type": "uint64"}]}],
+    ).functions.getData(int.from_bytes(sub_node, "big")).call()
+    already_minted = wrap_data[0].lower() == acct.address.lower()
+    if already_minted:
+        logger.info("subname %s already minted (skipping mint, doing records only)", label)
+
     gas_price = int(w3.eth.gas_price * 1.3)  # 30% buffer
     nonce = w3.eth.get_transaction_count(acct.address, "pending")
 
@@ -178,14 +193,17 @@ def mint_judgment(
         logger.info("%s: 0x%s gasUsed=%d block=%d", label_, h.hex(), rcpt.gasUsed, rcpt.blockNumber)
         return "0x" + h.hex()
 
-    # 1. Mint the subname
-    mint_tx = send(
-        wrap.functions.setSubnodeRecord(
-            parent_node, label, owner, RESOLVER,
-            0, 0, PARENT_EXPIRY,
-        ).build_transaction(base_tx(280_000)),
-        f"mint {label}",
-    )
+    # 1. Mint the subname (or skip if already minted by this deployer)
+    if already_minted:
+        mint_tx = "0x" + ("0" * 64)  # sentinel — see judgments.json for original
+    else:
+        mint_tx = send(
+            wrap.functions.setSubnodeRecord(
+                parent_node, label, owner, RESOLVER,
+                0, 0, PARENT_EXPIRY,
+            ).build_transaction(base_tx(280_000)),
+            f"mint {label}",
+        )
 
     # 2. Set all text records + addr in one multicall on the resolver
     truncated = question_prompt if len(question_prompt) <= 200 else (question_prompt[:197] + "...")
@@ -210,8 +228,10 @@ def mint_judgment(
             abi_element_identifier="setText",
             args=[sub_node, k, v],
         )[2:]))
+    # 8 multicall items: setAddr + 7 setText. SSTORE cost varies with text length;
+    # long prompts (200-char synod.question + description) push past 700k. Use 900k.
     records_tx = send(
-        resolver.functions.multicall(calls).build_transaction(base_tx(450_000)),
+        resolver.functions.multicall(calls).build_transaction(base_tx(900_000)),
         f"records {label}",
     )
 
