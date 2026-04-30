@@ -1,8 +1,23 @@
 # Synod
 
-> Decentralized AI settlement network for Delphi — a Gensyn AXL prize entry for [ETHGlobal Open Agents](https://ethglobal.com/events/openagents).
+> **AI Receipts.** Verifiable, transferable, ENS-addressable, 0G-anchored proofs of multi-model AI consensus. ETHGlobal Open Agents (May 2026) — partner submissions to **Gensyn AXL**, **ENS** (Identity + Creative tracks), and **0G** (Track 2 Swarms).
 
-When one AI calls the outcome, you trust one company. With Synod, you trust a network.
+When one AI calls the outcome, you trust one company. With Synod, you trust a network — and the network leaves a receipt every time it speaks.
+
+**Live**: [synod.gudman.xyz](https://synod.gudman.xyz) — homepage submits questions, [/network](https://synod.gudman.xyz/network) cross-checks the AXL mesh against on-chain registry against ENS records, [/gallery](https://synod.gudman.xyz/gallery) browses every settled question, [/verify](https://synod.gudman.xyz/verify) re-runs the proof.
+
+## How each partner's tech is load-bearing
+
+| Layer | Role | Demo lever |
+| --- | --- | --- |
+| **Gensyn AXL** | The only inter-settler transport. End-to-end encrypted Yggdrasil mesh. Cross-machine: Settlers A/B/C on Frankfurt VPS, Settler D on Toronto VPS. | `curl /topology` from both boxes shows bidirectional peer over public IP. |
+| **ENS (`synodai.eth`)** | Bootloader for the entire stack — registry contract address, RPC URL, chain id, threshold, settler list, all in on-chain text records. Edit a record → UI swings. | `GET https://synod.gudman.xyz/api/ens` returns live resolution. |
+| **ENS subnames** | Each settler is `settler-{a,b,c,d}.synodai.eth` with addr + role + ed25519 pubkey, cross-checked against on-chain registry AND live AXL daemon. | `GET /api/agent/settler-a.synodai.eth` |
+| **ENS judgment subnames** | After every settlement, a `j-{hash}.synodai.eth` is mintable to the question submitter — transferable AI judgment NFT. | See [`docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md`](docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md) |
+| **0G Storage** | Decentralized memory — every full deliberation transcript persisted via 0G Storage CLI; retrievable from anywhere via pure HTTP indexer URL. | `curl https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` |
+| **Gensyn L2 (chain 685689)** | The canonical settlement record. SynodRegistry at [`0xD387f749…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad). | First mainnet settlement: tx `0xc96835…6ab8b82` |
+
+See [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for full per-track writeups, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/ROADMAP.md`](docs/ROADMAP.md) for grant-honest scope + EIP-712 dual-signed quorum next milestone.
 
 ## The problem
 
