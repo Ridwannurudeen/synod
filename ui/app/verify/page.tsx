@@ -265,6 +265,28 @@ export default function VerifyPage() {
   const [view, setView] = useState<ServerView | null>(null);
   const [topError, setTopError] = useState<string | null>(null);
 
+  // Auto-verify if ?qid=… is present (deeplink from gallery)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const qid = params.get("qid");
+    if (!qid) return;
+    setQuestionId(qid);
+    setLoading(true);
+    fetch("/api/verify-proof", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: qid }),
+    })
+      .then(async (r) => {
+        const j = (await r.json()) as ServerView;
+        if (!r.ok || j.error) setTopError(j.error || `HTTP ${r.status}`);
+        else setView(j);
+      })
+      .catch((e) => setTopError(e instanceof Error ? e.message : "fetch failed"))
+      .finally(() => setLoading(false));
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);

@@ -201,8 +201,14 @@ export default function HomePage() {
           <h1 className="text-h1 font-semibold tracking-tight text-ink-50">Synod</h1>
           <span className="text-body-sm text-ink-400">decentralized AI settlement for Delphi</span>
           <a
-            href="/network"
+            href="/gallery"
             className="ml-auto rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-400"
+          >
+            Gallery →
+          </a>
+          <a
+            href="/network"
+            className="rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-400"
           >
             AXL mesh →
           </a>
