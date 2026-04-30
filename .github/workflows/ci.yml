@@ -20,6 +20,8 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+      - name: Install forge-std (not vendored)
+        run: forge install foundry-rs/forge-std --no-commit
       - name: forge build
         run: forge build --sizes
       - name: forge test (with fuzz)
@@ -40,6 +42,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
+          pip install -r requirements.txt
       - name: pytest
         run: pytest -q
 
