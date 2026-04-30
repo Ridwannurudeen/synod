@@ -70,11 +70,24 @@ function NodeCard({ node }: { node: NodeView }) {
             <PulseDot tone={tone} />
           </div>
           <div className="text-micro text-ink-400">
-            {node.registeredModelTag ?? "—"}
+            {node.spec.ensRole ?? node.registeredModelTag ?? "—"}
           </div>
         </div>
         <StatusPill label={nodeStatusLabel(node)} tone={tone} />
       </div>
+
+      {node.spec.ensFqn && (
+        <div className="mt-3 flex items-center gap-2 rounded border border-accent-700/40 bg-accent-700/8 px-2 py-1.5">
+          <span className="text-eyebrow uppercase tracking-wide text-accent-400">ens</span>
+          <code className="num text-caption text-accent-300">{node.spec.ensFqn}</code>
+          {node.pubkeyMatchesEns === true && (
+            <span className="ml-auto text-caption text-accent-400" title="live AXL pubkey matches synod.pubkey text record">✓ pubkey</span>
+          )}
+          {node.pubkeyMatchesEns === false && (
+            <span className="ml-auto text-caption text-alert-400" title="live AXL pubkey ≠ ENS synod.pubkey">✗ pubkey</span>
+          )}
+        </div>
+      )}
 
       <dl className="mt-5 grid grid-cols-[5.5rem_1fr] gap-y-1.5 text-caption">
         <Field k="pubkey" v={shortHex(node.pubkey ?? "—")} mono />
@@ -203,13 +216,26 @@ function Summary({ view, lastTickMs }: { view: NetworkView; lastTickMs: number }
   const onlineCount = view.nodes.filter((n) => n.online).length;
   const verifiedCount = view.nodes.filter((n) => n.registered && n.pubkeyMatchesRegistry).length;
   const total = view.nodes.length;
+  const ensSourced = view.configSource === "ens";
 
   return (
     <section className="rounded-md border border-ink-700 bg-ink-900/50 p-6">
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PulseDot tone="accent" />
           <span className="text-eyebrow uppercase tracking-wide text-ink-400">network state · live</span>
+          {ensSourced && view.ensParent && (
+            <span
+              className="ml-auto flex items-center gap-1.5 rounded-md border border-accent-700/40 bg-accent-700/10 px-2.5 py-1 text-caption text-accent-300"
+              title={`Registry, RPC, chain-id, threshold and the settler list were resolved from on-chain ENS records on ${view.ensParent}. Removing the ENS subnames or changing the registry text record swings this UI to a different deployment.`}
+            >
+              <span className="text-accent-400">●</span>
+              source: <code className="num text-accent-200">{view.ensParent}</code>
+              {view.ensSubnameCount !== undefined && (
+                <span className="text-ink-500">· {view.ensSubnameCount} subnames</span>
+              )}
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">

@@ -10,6 +10,7 @@
 
 import { createPublicClient, http, type Hex } from "viem";
 
+import { resolveEnsView, type SynodEnsSubname } from "./ens";
 import { loadConfig } from "./registry";
 import { SYNOD_REGISTRY_ABI } from "./registry-abi";
 
@@ -17,6 +18,12 @@ export type NodeSpec = {
   name: string;
   axlApi: string;
   evmAddress: string;
+  /** ENS subname this spec was sourced from, e.g. "settler-a.synodai.eth". */
+  ensFqn?: string;
+  /** Role string from the subname's `synod.role` text record. */
+  ensRole?: string;
+  /** ed25519 pubkey from the subname's `synod.pubkey` text record. */
+  ensPubkey?: string;
 };
 
 export type AxlPeer = {
@@ -35,6 +42,8 @@ export type NodeView = {
   registeredAxlPubKey?: string;
   registeredModelTag?: string;
   pubkeyMatchesRegistry: boolean;
+  /** True when the live AXL pubkey matches the `synod.pubkey` text record in ENS. */
+  pubkeyMatchesEns?: boolean;
 };
 
 export type MeshEdge = {
@@ -51,6 +60,12 @@ export type NetworkView = {
   nodes: NodeView[];
   edges: MeshEdge[];
   serverTimeMs: number;
+  /** Where registry/RPC + settler list came from this tick. "ens" = synodai.eth records. */
+  configSource?: "ens" | "env" | "runtime-json";
+  /** Parent ENS name when configSource === "ens". */
+  ensParent?: string;
+  /** Number of subnames resolved from ENS (0 if no ENS). */
+  ensSubnameCount?: number;
 };
 
 const DEFAULT_NODES: NodeSpec[] = [
@@ -71,17 +86,76 @@ const DEFAULT_NODES: NodeSpec[] = [
   },
 ];
 
-export function loadNetworkNodes(): NodeSpec[] {
+/**
+ * Maps ENS subnames to their AXL daemon URL. ENS holds *who* the settler is
+ * (EVM address, role, pubkey); this map holds *where* to reach it. Override
+ * via SYNOD_UI_AXL_MAP=settler-a.synodai.eth=http://...,settler-b...=...
+ */
+const DEFAULT_AXL_MAP: Record<string, string> = {
+  "settler-a.synodai.eth": "http://127.0.0.1:9002",
+  "settler-b.synodai.eth": "http://127.0.0.1:9012",
+  "settler-c.synodai.eth": "http://127.0.0.1:9022",
+};
+
+function loadAxlMap(): Record<string, string> {
+  const raw = process.env.SYNOD_UI_AXL_MAP;
+  if (!raw) return DEFAULT_AXL_MAP;
+  const out: Record<string, string> = {};
+  for (const entry of raw.split(",")) {
+    const [k, v] = entry.split("=").map((s) => s.trim());
+    if (k && v) out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : DEFAULT_AXL_MAP;
+}
+
+function specFromSubname(s: SynodEnsSubname, axlApi: string): NodeSpec {
+  // Display name: "A" / "B" / "C" from "settler-a" / "settler-b" / "settler-c"
+  const tail = s.label.replace(/^settler-/, "").toUpperCase() || s.label.toUpperCase();
+  return {
+    name: tail,
+    axlApi,
+    evmAddress: s.evmAddress,
+    ensFqn: s.fqn,
+    ensRole: s.role,
+    ensPubkey: s.pubkey,
+  };
+}
+
+/**
+ * Source the canonical settler list. ENS subnames win when present; env JSON
+ * is an explicit override; hardcoded defaults are local-dev fallback.
+ */
+export async function loadNetworkNodes(): Promise<{
+  specs: NodeSpec[];
+  source: "ens" | "env" | "default";
+}> {
+  if (process.env.SYNOD_UI_DISABLE_ENS !== "1") {
+    try {
+      const ens = await resolveEnsView();
+      if (ens.subnames.length > 0) {
+        const map = loadAxlMap();
+        const specs = ens.subnames.map((s) =>
+          specFromSubname(s, map[s.fqn] ?? `http://127.0.0.1:9002`)
+        );
+        return { specs, source: "ens" };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   const raw = process.env.SYNOD_UI_NETWORK_NODES;
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as NodeSpec[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return { specs: parsed, source: "env" };
+      }
     } catch {
-      // fall through to defaults
+      // fall through
     }
   }
-  return DEFAULT_NODES;
+  return { specs: DEFAULT_NODES, source: "default" };
 }
 
 async function probeAxl(
@@ -134,8 +208,8 @@ function deriveEdges(nodes: NodeView[]): MeshEdge[] {
 }
 
 export async function gatherNetworkState(): Promise<NetworkView> {
-  const cfg = loadConfig();
-  const specs = loadNetworkNodes();
+  const [cfg, nodes] = await Promise.all([loadConfig(), loadNetworkNodes()]);
+  const specs = nodes.specs;
 
   // 1. Probe all AXL daemons in parallel
   const probes = await Promise.all(
@@ -146,22 +220,34 @@ export async function gatherNetworkState(): Promise<NetworkView> {
   );
 
   const out: NetworkView = {
-    nodes: probes.map((p) => ({
-      spec: p.spec,
-      online: p.online,
-      pubkey: p.pubkey,
-      ipv6: p.ipv6,
-      peers: p.peers,
-      registered: false,
-      pubkeyMatchesRegistry: false,
-    })),
+    nodes: probes.map((p) => {
+      const ensPubkey = p.spec.ensPubkey;
+      const ensMatches =
+        ensPubkey !== undefined && p.pubkey !== undefined
+          ? p.pubkey.toLowerCase() === ensPubkey.toLowerCase()
+          : undefined;
+      return {
+        spec: p.spec,
+        online: p.online,
+        pubkey: p.pubkey,
+        ipv6: p.ipv6,
+        peers: p.peers,
+        registered: false,
+        pubkeyMatchesRegistry: false,
+        pubkeyMatchesEns: ensMatches,
+      };
+    }),
     edges: [],
     serverTimeMs: Date.now(),
+    configSource: cfg?.source,
+    ensParent: nodes.source === "ens" ? "synodai.eth" : undefined,
+    ensSubnameCount: nodes.source === "ens" ? specs.length : 0,
   };
 
   // 2. Read on-chain registration for each node
   if (cfg) {
     out.registryAddress = cfg.registryAddress;
+    out.chainId = cfg.chainId;
     const client = createPublicClient({ transport: http(cfg.rpcUrl) });
     try {
       out.chainId = await client.getChainId();

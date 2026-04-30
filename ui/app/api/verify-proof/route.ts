@@ -43,7 +43,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const cfg = loadConfig();
+  const cfg = await loadConfig();
   if (!cfg) {
     return NextResponse.json(
       { error: "server has no SYNOD_RPC_URL / SYNOD_REGISTRY_ADDRESS configured" },
