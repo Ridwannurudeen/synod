@@ -53,15 +53,34 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const client = createPublicClient({ transport: http(cfg.rpcUrl) });
 
+  // Brief retry helper — Gensyn L2 public RPC sometimes throws 429 under demo load.
+  async function withRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        return await fn();
+      } catch (e) {
+        lastErr = e;
+        const msg = e instanceof Error ? e.message : String(e);
+        // Only retry on rate-limit / transient errors; bail fast on real reverts.
+        if (!/429|rate|too many|timeout|network/i.test(msg)) throw e;
+        await new Promise((r) => setTimeout(r, 400 * (i + 1) + Math.random() * 200));
+      }
+    }
+    throw lastErr;
+  }
+
   // Settlement existence check
   let settled: boolean;
   try {
-    settled = (await client.readContract({
-      address: cfg.registryAddress,
-      abi: SYNOD_REGISTRY_ABI,
-      functionName: "isSettled",
-      args: [qid],
-    })) as boolean;
+    settled = (await withRetry(() =>
+      client.readContract({
+        address: cfg.registryAddress,
+        abi: SYNOD_REGISTRY_ABI,
+        functionName: "isSettled",
+        args: [qid],
+      })
+    )) as boolean;
   } catch (e) {
     return NextResponse.json(
       {
@@ -95,12 +114,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     timestamp: bigint;
   };
   try {
-    const tuple = (await client.readContract({
+    const tuple = (await withRetry(() => client.readContract({
       address: cfg.registryAddress,
       abi: SYNOD_REGISTRY_ABI,
       functionName: "getSettlement",
       args: [qid],
-    })) as {
+    }))) as {
       questionId: Hex;
       outcome: number;
       quorumSize: bigint;
