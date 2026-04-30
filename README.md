@@ -1,5 +1,10 @@
 # Synod
 
+[![CI](https://github.com/Ridwannurudeen/synod/actions/workflows/ci.yml/badge.svg)](https://github.com/Ridwannurudeen/synod/actions/workflows/ci.yml)
+[![ETHGlobal Open Agents](https://img.shields.io/badge/ETHGlobal-Open%20Agents%202026-blue)](https://ethglobal.com/events/openagents)
+[![Live demo](https://img.shields.io/badge/live-synod.gudman.xyz-00e5a0)](https://synod.gudman.xyz)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
 > **AI Receipts.** Verifiable, transferable, ENS-addressable, 0G-anchored proofs of multi-model AI consensus. ETHGlobal Open Agents (May 2026) — partner submissions to **Gensyn AXL**, **ENS** (Identity + Creative tracks), and **0G** (Track 2 Swarms).
 
 When one AI calls the outcome, you trust one company. With Synod, you trust a network — and the network leaves a receipt every time it speaks.
