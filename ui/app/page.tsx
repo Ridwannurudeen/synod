@@ -502,6 +502,149 @@ function MeshSvg({ nodes }: { nodes: NetworkNode[] }) {
 }
 
 /* ============================================================
+   RECEIPT FLOW DIAGRAM — visual data-flow from question to receipt.
+   Horizontal on desktop, stacks on mobile. SVG, no external libs.
+   ============================================================ */
+function ReceiptFlowDiagram() {
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        viewBox="0 0 1080 260"
+        className="block w-full min-w-[880px] max-w-[1080px]"
+        role="img"
+        aria-label="Synod receipt flow diagram"
+      >
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="rgb(108, 118, 137)" />
+          </marker>
+          <marker id="arrowAccent" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="rgb(0, 229, 160)" />
+          </marker>
+        </defs>
+
+        {/* Step 1: Question in */}
+        <g>
+          <rect x={20} y={100} width={140} height={60} rx={6} fill="rgb(20, 23, 31)" stroke="rgb(43, 49, 66)" />
+          <text x={90} y={124} textAnchor="middle" fontSize={11} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+            INPUT
+          </text>
+          <text x={90} y={146} textAnchor="middle" fontSize={14} fill="rgb(244, 246, 250)" fontWeight={600}>
+            Question
+          </text>
+        </g>
+
+        {/* Connector 1 → 2 */}
+        <line x1={166} y1={130} x2={224} y2={130} stroke="rgb(108, 118, 137)" strokeWidth={1.5} markerEnd="url(#arrow)" />
+
+        {/* Step 2: AXL mesh box with 4 settlers */}
+        <g>
+          <rect x={230} y={50} width={260} height={160} rx={8} fill="rgb(14, 17, 24)" stroke="rgb(91, 130, 255)" strokeOpacity={0.5} strokeDasharray="3 3" />
+          <text x={360} y={76} textAnchor="middle" fontSize={10} fill="rgb(91, 130, 255)" fontFamily="var(--font-geist-mono)" letterSpacing="2">
+            GENSYN AXL · ENCRYPTED P2P
+          </text>
+          {/* 4 settler nodes A B C D in a 2×2 */}
+          {([
+            { name: "A", x: 290, y: 120, role: "sonnet" },
+            { name: "B", x: 360, y: 120, role: "haiku" },
+            { name: "C", x: 290, y: 175, role: "gemini" },
+            { name: "D", x: 360, y: 175, role: "opus" },
+          ] as const).map((s) => (
+            <g key={s.name}>
+              <circle cx={s.x} cy={s.y} r={14} fill="rgb(0, 229, 160)" fillOpacity={0.15} stroke="rgb(0, 229, 160)" strokeWidth={1.4} />
+              <text x={s.x} y={s.y + 4} textAnchor="middle" fontSize={11} fontWeight={600} fill="rgb(0, 229, 160)" fontFamily="var(--font-geist-mono)">
+                {s.name}
+              </text>
+              <text x={s.x} y={s.y + 30} textAnchor="middle" fontSize={9} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+                {s.role}
+              </text>
+            </g>
+          ))}
+          {/* mesh edges between A-B, A-C, B-D, C-D and A-D, B-C cross */}
+          {[
+            [290, 120, 360, 120],
+            [290, 175, 360, 175],
+            [290, 120, 290, 175],
+            [360, 120, 360, 175],
+            [290, 120, 360, 175],
+            [360, 120, 290, 175],
+          ].map(([x1, y1, x2, y2], i) => (
+            <line
+              key={i}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="rgb(0, 229, 160)"
+              strokeWidth={0.8}
+              strokeOpacity={0.45}
+            />
+          ))}
+          <text x={420} y={130} fontSize={10} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+            ed25519
+          </text>
+          <text x={420} y={144} fontSize={10} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+            signatures
+          </text>
+          <text x={420} y={170} fontSize={10} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+            quorum
+          </text>
+          <text x={420} y={184} fontSize={10} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+            per outcome
+          </text>
+        </g>
+
+        {/* Connector 2 → 3 */}
+        <line x1={494} y1={130} x2={552} y2={130} stroke="rgb(0, 229, 160)" strokeWidth={1.6} markerEnd="url(#arrowAccent)" />
+        <text x={523} y={120} textAnchor="middle" fontSize={9} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+          quorum
+        </text>
+        <text x={523} y={148} textAnchor="middle" fontSize={9} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">
+          payload
+        </text>
+
+        {/* Step 3: Gensyn L2 settlement */}
+        <g>
+          <rect x={558} y={100} width={170} height={60} rx={6} fill="rgb(20, 23, 31)" stroke="rgb(184, 138, 255)" strokeOpacity={0.55} />
+          <text x={643} y={122} textAnchor="middle" fontSize={10} fill="rgb(184, 138, 255)" fontFamily="var(--font-geist-mono)" letterSpacing="1.5">
+            GENSYN L2 · 685689
+          </text>
+          <text x={643} y={144} textAnchor="middle" fontSize={13} fill="rgb(244, 246, 250)" fontWeight={600}>
+            SynodRegistry
+          </text>
+        </g>
+
+        {/* Splits to 0G and ENS */}
+        <line x1={734} y1={120} x2={830} y2={50} stroke="rgb(108, 118, 137)" strokeWidth={1.5} markerEnd="url(#arrow)" />
+        <line x1={734} y1={140} x2={830} y2={210} stroke="rgb(108, 118, 137)" strokeWidth={1.5} markerEnd="url(#arrow)" />
+
+        {/* Step 4a: 0G Storage */}
+        <g>
+          <rect x={836} y={20} width={220} height={60} rx={6} fill="rgb(20, 23, 31)" stroke="rgb(0, 229, 160)" strokeOpacity={0.55} />
+          <text x={946} y={42} textAnchor="middle" fontSize={10} fill="rgb(0, 229, 160)" fontFamily="var(--font-geist-mono)" letterSpacing="1.5">
+            0G STORAGE
+          </text>
+          <text x={946} y={64} textAnchor="middle" fontSize={13} fill="rgb(244, 246, 250)" fontWeight={600}>
+            full transcript
+          </text>
+        </g>
+
+        {/* Step 4b: ENS judgment */}
+        <g>
+          <rect x={836} y={180} width={220} height={60} rx={6} fill="rgb(20, 23, 31)" stroke="rgb(91, 130, 255)" strokeOpacity={0.55} />
+          <text x={946} y={202} textAnchor="middle" fontSize={10} fill="rgb(91, 130, 255)" fontFamily="var(--font-geist-mono)" letterSpacing="1.5">
+            ENS · synodai.eth
+          </text>
+          <text x={946} y={222} textAnchor="middle" fontSize={13} fill="rgb(244, 246, 250)" fontWeight={600}>
+            <tspan fontFamily="var(--font-geist-mono)">j-{`{hash}`}</tspan>
+          </text>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/* ============================================================
    LATEST SETTLEMENT SPOTLIGHT — featured hero card pulling from /api/gallery
    So the idle homepage feels alive (without anyone submitting a question)
    ============================================================ */
@@ -975,7 +1118,7 @@ export default function HomePage() {
           <LatestSettlement />
         </section>
 
-        {/* HOW IT WORKS — 3-step explainer with ties to each layer */}
+        {/* HOW IT WORKS — 3-step explainer + visual flow diagram */}
         <section className="border-y border-ink-800/40 bg-ink-900/20">
           <div className="mx-auto max-w-7xl px-6 py-16">
             <SectionHeader
@@ -984,6 +1127,17 @@ export default function HomePage() {
               sub="Every question follows the same path. Each step ties to a specific layer of the stack."
             />
             <HowItWorks />
+            <div className="mt-10 rounded-md border border-ink-700 bg-ink-950/40 p-4 md:p-6">
+              <div className="mb-3 flex items-baseline justify-between">
+                <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-500">
+                  Receipt path · visual
+                </span>
+                <span className="text-micro text-ink-500">
+                  one prompt · four sigs · three layers · one receipt
+                </span>
+              </div>
+              <ReceiptFlowDiagram />
+            </div>
           </div>
         </section>
 
