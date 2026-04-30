@@ -152,6 +152,13 @@ function ProtocolReceipt({ stats }: { stats: ProtocolStats | null }) {
       </div>
 
       <div className="mt-4 text-center text-ink-500">{dash}</div>
+      <div className="mt-3 flex flex-col items-center gap-2">
+        <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-500">
+          settlement velocity · 14d
+        </span>
+        <SettlementSparkline />
+      </div>
+      <div className="mt-3 text-center text-ink-500">{dash}</div>
       <div className="mt-3 flex items-center justify-center gap-2">
         <span className="pulse-dot" aria-hidden />
         <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
@@ -160,6 +167,72 @@ function ProtocolReceipt({ stats }: { stats: ProtocolStats | null }) {
       </div>
       <div className="mt-3 text-center text-ink-500">{dash}</div>
     </div>
+  );
+}
+
+function SettlementSparkline() {
+  const [bins, setBins] = useState<number[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/gallery", { cache: "no-store" });
+        if (!r.ok || cancelled) return;
+        const j = (await r.json()) as { items: { postedAt: number }[] };
+        // Group by day for the last 14 days
+        const days = 14;
+        const now = Math.floor(Date.now() / 1000);
+        const dayStart = now - days * 24 * 3600;
+        const counts = new Array<number>(days).fill(0);
+        for (const it of j.items ?? []) {
+          if (typeof it.postedAt !== "number") continue;
+          if (it.postedAt < dayStart) continue;
+          const idx = Math.min(days - 1, Math.floor((it.postedAt - dayStart) / (24 * 3600)));
+          counts[idx] += 1;
+        }
+        if (!cancelled) setBins(counts);
+      } catch {
+        /* tolerate */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!bins) {
+    return <div aria-hidden className="h-8 w-full animate-pulse rounded-sm bg-ink-800" />;
+  }
+
+  const max = Math.max(1, ...bins);
+  const w = 220;
+  const h = 36;
+  const barW = w / bins.length - 2;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-9 w-full">
+      {bins.map((c, i) => {
+        const barH = (c / max) * (h - 4);
+        const x = i * (barW + 2);
+        const y = h - barH;
+        const isToday = i === bins.length - 1;
+        const fill = c === 0 ? "rgb(40, 47, 60)" : isToday ? "rgb(0, 229, 160)" : "rgb(0, 130, 89)";
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={c === 0 ? h - 1 : y}
+            width={barW}
+            height={c === 0 ? 1 : barH}
+            fill={fill}
+            opacity={c === 0 ? 0.6 : 0.95}
+            rx={1}
+          />
+        );
+      })}
+    </svg>
   );
 }
 
@@ -425,6 +498,126 @@ function MeshSvg({ nodes }: { nodes: NetworkNode[] }) {
       <text x={80} y={178} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)" textAnchor="middle">YYZ</text>
       <text x={80} y={20} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)" textAnchor="middle">FRA</text>
     </svg>
+  );
+}
+
+/* ============================================================
+   LATEST SETTLEMENT SPOTLIGHT — featured hero card pulling from /api/gallery
+   So the idle homepage feels alive (without anyone submitting a question)
+   ============================================================ */
+function LatestSettlement() {
+  const [item, setItem] = useState<GalleryItem | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/gallery", { cache: "no-store" });
+        if (r.ok && !cancelled) {
+          const j = (await r.json()) as { items: GalleryItem[] };
+          // Pick the most recent settled item that has a real prompt.
+          const ready = j.items?.find((x) => x.prompt && x.prompt.length > 0) ?? null;
+          setItem(ready);
+        }
+      } catch {
+        /* tolerate */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!item) {
+    // Skeleton so the layout doesn't pop
+    return (
+      <div className="rounded-md border border-ink-700 bg-ink-900/40 p-6 md:p-8">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="h-2 w-24 animate-pulse rounded-sm bg-ink-700" />
+          <div className="h-2 w-16 animate-pulse rounded-sm bg-ink-700" />
+        </div>
+        <div className="mt-4 grid gap-6 md:grid-cols-[2fr_1fr] md:items-center">
+          <div className="flex flex-col gap-2">
+            <div className="h-4 w-full animate-pulse rounded-sm bg-ink-800" />
+            <div className="h-4 w-5/6 animate-pulse rounded-sm bg-ink-800" />
+            <div className="h-4 w-3/4 animate-pulse rounded-sm bg-ink-800" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="h-12 w-24 animate-pulse rounded-sm bg-ink-700" />
+            <div className="h-3 w-32 animate-pulse rounded-sm bg-ink-700" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const ago = Math.max(0, Math.floor((Date.now() / 1000 - item.postedAt)));
+  const agoLabel =
+    ago < 60 ? `${ago}s ago` : ago < 3600 ? `${Math.floor(ago / 60)}m ago` : `${Math.floor(ago / 3600)}h ago`;
+  const qid = item.questionId.replace(/^0x/, "");
+
+  return (
+    <div className="rounded-md border border-accent-700/40 bg-accent-700/[0.04] p-6 md:p-8">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="pulse-dot" aria-hidden />
+          <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
+            most recent settlement
+          </span>
+        </div>
+        <span className="num text-micro text-ink-500">{agoLabel}</span>
+      </div>
+      <div className="mt-5 grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="flex flex-col gap-3">
+          <p className="text-body-lg leading-relaxed text-ink-100">{item.prompt}</p>
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-caption text-ink-500">
+            <span>
+              question id <code className="num text-ink-300">0x{qid.slice(0, 8)}…{qid.slice(-6)}</code>
+            </span>
+            <span>
+              transcript {(item.transcript.bytes / 1024).toFixed(1)} kB on 0G
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col items-start gap-1 md:items-end md:text-right">
+          <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
+            outcome
+          </span>
+          <span className="halo-accent num text-display font-semibold tracking-tight text-accent-400">
+            {item.outcomeLabel || (item.outcome !== null ? String(item.outcome) : "—")}
+          </span>
+        </div>
+      </div>
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-ink-800/60 pt-4 text-caption">
+        <a
+          href={`/verify?qid=${qid}`}
+          className="rounded-md border border-accent-700/50 bg-accent-700/10 px-3 py-1.5 text-accent-300 transition-colors hover:bg-accent-700/20"
+        >
+          verify proof →
+        </a>
+        <a
+          href={item.transcript.indexerUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-ink-300 transition-colors hover:border-accent-700/50 hover:text-accent-200"
+        >
+          fetch transcript ↗
+        </a>
+        {item.judgment && (
+          <a
+            href={item.judgment.ensAppUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md border border-ink-700 bg-ink-900/60 px-3 py-1.5 text-ink-300 transition-colors hover:border-accent-700/50 hover:text-accent-200"
+          >
+            <code className="num">{item.judgment.fqn}</code> ↗
+          </a>
+        )}
+        <span className="ml-auto text-ink-500">posted on Gensyn L2 · transcript on 0G Storage</span>
+      </div>
+    </div>
   );
 }
 
@@ -771,8 +964,13 @@ export default function HomePage() {
         </section>
 
         {/* LIVE MESH STRIP — preview of /network without leaving the homepage */}
-        <section className="mx-auto max-w-7xl px-6 pb-16">
+        <section className="mx-auto max-w-7xl px-6 pb-12">
           <LiveMeshStrip />
+        </section>
+
+        {/* LATEST SETTLEMENT — what just happened. Idle visitors see real protocol activity. */}
+        <section className="mx-auto max-w-7xl px-6 pb-16">
+          <LatestSettlement />
         </section>
 
         {/* HOW IT WORKS — 3-step explainer with ties to each layer */}
