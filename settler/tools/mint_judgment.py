@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlencode, urlparse
 
 from web3 import Web3
 
@@ -52,6 +53,25 @@ REGISTRY_ABI = [
     {"name": "registeredSettlerCount", "type": "function", "stateMutability": "view",
      "inputs": [], "outputs": [{"type": "uint256"}]},
 ]
+
+
+def transcript_indexer_url(indexer: str, transcript_cid: str) -> str:
+    root = transcript_cid.strip()
+    if not root.startswith("0x") or len(root) != 66:
+        raise ValueError("transcript root must be 32-byte 0x-prefixed hex")
+    try:
+        int(root[2:], 16)
+    except ValueError as exc:
+        raise ValueError("transcript root must be hex") from exc
+
+    parsed = urlparse(indexer)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("SYNOD_0G_INDEXER must be an http(s) URL")
+    if parsed.username or parsed.password:
+        raise ValueError("SYNOD_0G_INDEXER must not include credentials")
+
+    base = indexer.rstrip("/")
+    return f"{base}/file?{urlencode({'root': root})}"
 
 
 def main() -> int:
@@ -108,8 +128,8 @@ def main() -> int:
         try:
             import urllib.request
             indexer = os.environ.get("SYNOD_0G_INDEXER", "https://indexer-storage-testnet-turbo.0g.ai")
-            url = f"{indexer.rstrip('/')}/file?root={transcript_cid}"
-            with urllib.request.urlopen(url, timeout=15) as r:
+            url = transcript_indexer_url(indexer, transcript_cid)
+            with urllib.request.urlopen(url, timeout=15) as r:  # nosec B310 - validated http(s) URL above.
                 doc = json.loads(r.read().decode())
                 prompt = doc.get("question", {}).get("prompt", prompt)
         except Exception as e:  # noqa: BLE001

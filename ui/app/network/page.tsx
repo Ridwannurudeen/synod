@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { NetworkView, NodeView } from "@/lib/network";
+import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
 
 const POLL_MS = 5_000;
 
@@ -288,24 +289,14 @@ export default function NetworkPage() {
   }, []);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-h1 font-semibold tracking-tight text-ink-50">AXL mesh</h1>
-          <span className="text-body-sm text-ink-400">live read of every settler daemon</span>
-          <Link href="/" className="ml-auto rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 hover:border-accent-700 hover:text-accent-400 transition-colors">
-            ← deliberation
-          </Link>
-        </div>
-        <p className="max-w-3xl text-body-sm text-ink-400">
-          Three independent AXL daemons, each with its own ed25519 identity, connected over an
-          encrypted Yggdrasil mesh. Each node is independently registered in
-          <code className="num mx-1 rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">SynodRegistry</code>
-          with a distinct EVM address and AXL pubkey. This page reads each daemon&apos;s
-          <code className="num mx-1 rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">/topology</code>
-          endpoint and cross-checks the on-chain registration in real time.
-        </p>
-      </header>
+    <>
+      <NavBar />
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
+        <PageHeader
+          eyebrow="AXL mesh"
+          title="Cross-machine settler network"
+          sub="Independent AXL daemons, each with its own ed25519 identity, connected over an encrypted Yggdrasil mesh across two physical machines (Frankfurt + Toronto). Each node is independently registered in SynodRegistry with a distinct EVM address. This page reads each daemon's /topology endpoint and cross-checks ENS + on-chain + live AXL state in real time."
+        />
 
       {error && (
         <div className="rounded-md border border-alert-600 bg-alert-600/15 px-3 py-2 text-body-sm text-alert-400">
@@ -381,11 +372,8 @@ export default function NetworkPage() {
         </div>
       )}
 
-      <footer className="mt-auto pt-6 text-micro text-ink-500">
-        polling /api/network ·{" "}
-        <Link href="/" className="hover:text-accent-400">deliberation</Link> ·{" "}
-        <Link href="/verify" className="hover:text-accent-400">verify proof</Link>
-      </footer>
-    </main>
+      </main>
+      <DeepFooter />
+    </>
   );
 }

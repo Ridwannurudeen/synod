@@ -12,6 +12,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
+
 type Item = {
   questionId: string;
   prompt: string;
@@ -163,26 +165,14 @@ export default function GalleryPage() {
   }, []);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-6xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-h1 font-semibold tracking-tight text-ink-50">Gallery</h1>
-          <span className="text-body-sm text-ink-400">every question Synod has settled</span>
-          <Link
-            href="/"
-            className="ml-auto rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-400"
-          >
-            ← deliberation
-          </Link>
-        </div>
-        <p className="max-w-3xl text-body-sm text-ink-400">
-          Each card is a question that the Synod swarm independently deliberated, signed, and
-          settled on-chain. The full reasoning chain is permanently anchored on 0G Storage and
-          (when minted) addressable via an ENS judgment subname under{" "}
-          <code className="num rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">synodai.eth</code>.
-          Categories: factual baseline, loaded/biased, prediction, prompt-injection.
-        </p>
-      </header>
+    <>
+      <NavBar />
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
+        <PageHeader
+          eyebrow="Gallery"
+          title="Every question Synod has settled"
+          sub="Each card is a question the swarm independently deliberated, signed, and settled on-chain. The full reasoning chain is permanently anchored on 0G Storage and (when minted) addressable via an ENS judgment subname under synodai.eth. Categories: factual baseline, loaded/biased, prediction, prompt-injection."
+        />
 
       {error && (
         <div className="rounded-md border border-alert-600 bg-alert-600/15 px-3 py-2 text-body-sm text-alert-400">
@@ -208,11 +198,8 @@ export default function GalleryPage() {
         </>
       )}
 
-      <footer className="mt-auto pt-6 text-micro text-ink-500">
-        polling /api/gallery ·{" "}
-        <Link href="/network" className="hover:text-accent-400">AXL mesh</Link> ·{" "}
-        <Link href="/verify" className="hover:text-accent-400">verify proof</Link>
-      </footer>
-    </main>
+      </main>
+      <DeepFooter />
+    </>
   );
 }

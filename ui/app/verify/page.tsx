@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { ProofVerificationView, ProofVoteView } from "@/lib/types";
+import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
 
 type ServerView = ProofVerificationView & {
   registryAddress?: string;
@@ -312,22 +313,14 @@ export default function VerifyPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-h1 font-semibold tracking-tight text-ink-50">Proof explorer</h1>
-          <span className="text-body-sm text-ink-400">verify any settlement independently</span>
-          <Link href="/" className="ml-auto rounded-md border border-ink-700 px-3 py-1 text-caption text-ink-300 hover:border-accent-700 hover:text-accent-400 transition-colors">
-            ← deliberation
-          </Link>
-        </div>
-        <p className="max-w-3xl text-body-sm text-ink-400">
-          Paste a question id and the server recomputes the on-chain settlement proof:
-          ed25519 signature on each vote, registry membership for each signer, per-outcome quorum, and
-          weighted score. Same logic as
-          <code className="num mx-1 rounded bg-ink-800 px-1.5 py-0.5 text-ink-200">verify_settlement.py</code>.
-        </p>
-      </header>
+    <>
+      <NavBar />
+      <main className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12">
+        <PageHeader
+          eyebrow="Proof explorer"
+          title="Verify any settlement"
+          sub="Paste a question id and the server recomputes the proof from raw chain bytes — ed25519 signature on each vote, registry membership for each signer, per-outcome quorum, weighted score. Same logic as verify_settlement.py. CLI verifier and HTTP verifier produce identical results."
+        />
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-md border border-ink-700 bg-ink-900/50 p-5">
         <label className="text-eyebrow uppercase tracking-wide text-ink-400">
@@ -413,10 +406,8 @@ export default function VerifyPage() {
         </section>
       )}
 
-      <footer className="mt-auto pt-6 text-micro text-ink-500">
-        <Link href="/" className="hover:text-accent-400">deliberation</Link> ·{" "}
-        <Link href="/network" className="hover:text-accent-400">mesh</Link>
-      </footer>
-    </main>
+      </main>
+      <DeepFooter />
+    </>
   );
 }
