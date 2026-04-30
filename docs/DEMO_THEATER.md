@@ -45,10 +45,14 @@ All scenarios assume:
 
 **Why**: Showcases the ENS Creative novelty — judgments as transferable, ENS-addressable receipts.
 
-**Setup**
+**Setup (LIVE-MINT path — requires deployer balance)**
 - Open https://synod.gudman.xyz in primary tab
-- Pre-mint a fresh judgment subname (off-camera) so we have a known-working `j-{hash}.synodai.eth` to demo if the live mint fails
-- Top up ENS deployer with ~0.005 ETH
+- Top up ENS deployer with ~0.003 ETH if recording during high-gas hours
+- Two pre-minted subnames already exist as fallback: `j-4320bed.synodai.eth` (prime, factual baseline) + `j-35af530.synodai.eth` (sky question, prompt-injection)
+
+**Setup (PRE-MINTED path — recommended if budget tight)**
+- Pick `j-35af530.synodai.eth` for the demo (prompt-injection ties into Scenario 4's narrative)
+- Skip the live-mint step; the demo flow becomes "click verify → ProvenancePanel shows the subname → open in ENS app"
 
 **On-camera**
 1. On homepage, paste a new factual question: "Is the boiling point of water 100°C at sea level pressure? Vote 1 for yes, 0 for no."
@@ -74,6 +78,8 @@ All scenarios assume:
 ## Scenario 3 — Two Physical Machines, One Mesh (30s)
 
 **Why**: Hard requirement for AXL prize ("two AXL nodes, not just two processes").
+
+**Hero artifact for this scenario**: question id `cd79b5dbfc6365f7f6c21e5b1c7a7b841a502b448fe9689f403d84fbac4447ac` ("Is the Pacific Ocean the largest ocean on Earth by surface area?"). Settled with quorum=3 across **all 4 settlers including Settler D in Toronto** — Sonnet (Frankfurt), Haiku (Frankfurt), and Opus (Toronto, cross-machine). 0G transcript root `0x168964fb…3775`. On-chain settlement tx `0x886a72f0…4124`.
 
 **Setup**
 - Two terminal windows side-by-side, one SSH'd to Contabo (75.119.153.252, "Frankfurt"), one to Servarica (38.49.212.102, "Toronto")

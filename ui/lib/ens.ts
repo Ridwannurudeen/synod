@@ -112,7 +112,7 @@ const PARENT_TEXT_KEYS = [
   "synod.network-url",
 ] as const;
 
-const SUBNAME_LABELS = ["settler-a", "settler-b", "settler-c"] as const;
+const SUBNAME_LABELS = ["settler-a", "settler-b", "settler-c", "settler-d"] as const;
 
 const SUBNAME_TEXT_KEYS = ["synod.role", "synod.pubkey", "synod.parent"] as const;
 

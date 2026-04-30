@@ -95,6 +95,11 @@ const DEFAULT_AXL_MAP: Record<string, string> = {
   "settler-a.synodai.eth": "http://127.0.0.1:9002",
   "settler-b.synodai.eth": "http://127.0.0.1:9012",
   "settler-c.synodai.eth": "http://127.0.0.1:9022",
+  // Settler D runs on a separate machine (Servarica). The UI server (Contabo)
+  // probes its /topology through a socat bridge on port 9203 → 127.0.0.1:9202;
+  // the bridge is firewalled to Contabo's IP only. Keeps D's API private while
+  // letting the cross-stack ENS+chain+live cross-check work end-to-end.
+  "settler-d.synodai.eth": "http://38.49.212.102:9203",
 };
 
 function loadAxlMap(): Record<string, string> {
