@@ -77,14 +77,35 @@ type ProtocolStats = {
   storageNetwork: string;
 };
 
+const STATS_CACHE_KEY = "synod:lastStats";
+
 function useProtocolStats() {
-  const [stats, setStats] = useState<ProtocolStats | null>(null);
+  // Hydrate from localStorage so the receipt + counters render with last-known
+  // values immediately on cold-paint instead of "—" placeholders. Fresh fetch
+  // overwrites within the first 200ms typically.
+  const [stats, setStats] = useState<ProtocolStats | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(STATS_CACHE_KEY);
+      return raw ? (JSON.parse(raw) as ProtocolStats) : null;
+    } catch {
+      return null;
+    }
+  });
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       try {
         const r = await fetch("/api/stats", { cache: "no-store" });
-        if (r.ok && !cancelled) setStats((await r.json()) as ProtocolStats);
+        if (r.ok && !cancelled) {
+          const fresh = (await r.json()) as ProtocolStats;
+          setStats(fresh);
+          try {
+            window.localStorage.setItem(STATS_CACHE_KEY, JSON.stringify(fresh));
+          } catch {
+            /* private mode etc. */
+          }
+        }
       } catch {
         /* tolerate */
       }
@@ -143,11 +164,19 @@ function ProtocolReceipt({ stats }: { stats: ProtocolStats | null }) {
 }
 
 function ReceiptRow({ label, value }: { label: string; value: string | number | undefined }) {
-  const right = value === undefined || value === null ? "—" : String(value);
+  const isEmpty = value === undefined || value === null;
   return (
     <div className="flex items-baseline justify-between gap-3">
       <span className="text-ink-500">{label}</span>
-      <span className="num text-ink-100">{right}</span>
+      {isEmpty ? (
+        <span
+          aria-hidden
+          className="h-3 w-16 animate-pulse rounded-sm bg-ink-700"
+          title="loading…"
+        />
+      ) : (
+        <span className="num text-ink-100">{String(value)}</span>
+      )}
     </div>
   );
 }
@@ -157,29 +186,30 @@ function ReceiptRow({ label, value }: { label: string; value: string | number | 
    ============================================================ */
 function Hero({ stats }: { stats: ProtocolStats | null }) {
   return (
-    <section className="grid gap-12 md:grid-cols-[3fr_2fr] md:gap-16 md:items-center">
+    <section className="grid gap-10 md:grid-cols-[3fr_2fr] md:gap-16 md:items-center">
       <div className="flex flex-col gap-6">
         <div className="flex items-center gap-3">
           <span className="pulse-dot" aria-hidden />
           <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-400">
-            AI Receipts · Ethereum · Gensyn L2 · 0G
+            AI Receipts · Live on Ethereum, Gensyn L2, 0G
           </span>
         </div>
-        <h1 className="text-display font-semibold tracking-tight text-ink-50 md:text-display-xl">
-          When AI says <span className="text-accent-400 halo-accent">yes</span>,
-          <br className="hidden md:block" />
-          {" "}prove it.
+        <h1 className="text-h1 font-semibold tracking-tight text-ink-50 sm:text-display md:text-display-xl">
+          AI verdicts,
+          <br className="hidden sm:block" />
+          {" "}signed &amp; <span className="text-accent-400 halo-accent">addressable</span>.
         </h1>
         <p className="max-w-xl text-body-lg text-ink-300">
-          Multi-model AI quorum, signed end-to-end with ed25519 identities. Posted on Gensyn L2,
-          anchored on 0G Storage, addressable on ENS. Read it, transfer it, contest it.
+          When N AI models agree on a question, the verdict is signed end-to-end with ed25519,
+          posted on Gensyn L2, anchored on 0G Storage, and minted as a transferable ENS subname.
+          Read it, verify it, transfer it.
         </p>
         <div className="flex flex-wrap gap-3 pt-2">
           <a
             href="#try"
             className="rounded-md bg-accent-500 px-5 py-3 text-body-sm font-medium text-ink-950 transition-colors hover:bg-accent-400"
           >
-            Submit a question
+            Settle a question
           </a>
           <a
             href="/gallery"
@@ -201,6 +231,195 @@ function Hero({ stats }: { stats: ProtocolStats | null }) {
 }
 
 /* ============================================================
+   LIVE MESH STRIP — preview of /network on the homepage
+   Shows 4 settlers with live cross-checks. Clicks through to /network.
+   ============================================================ */
+type NetworkNode = {
+  spec: { name: string; ensFqn?: string; ensRole?: string };
+  online: boolean;
+  registered: boolean;
+  pubkeyMatchesEns?: boolean;
+};
+type NetworkSnapshot = {
+  registeredSettlerCount?: number;
+  ensSubnameCount?: number;
+  configSource?: string;
+  ensParent?: string;
+  nodes: NetworkNode[];
+  edges: { from: string; to: string; up: boolean }[];
+};
+
+function LiveMeshStrip() {
+  const [view, setView] = useState<NetworkSnapshot | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/network", { cache: "no-store" });
+        if (r.ok && !cancelled) setView((await r.json()) as NetworkSnapshot);
+      } catch {
+        /* tolerate */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 8_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const nodes = view?.nodes ?? [];
+  const verifiedCount = nodes.filter((n) => n.online && n.registered && n.pubkeyMatchesEns).length;
+  const totalCount = nodes.length;
+
+  return (
+    <div className="rounded-md border border-ink-700 bg-ink-900/40 p-5 md:p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="pulse-dot" aria-hidden />
+          <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
+            AXL mesh · live
+          </span>
+        </div>
+        <a
+          href="/network"
+          className="text-caption text-ink-300 transition-colors hover:text-accent-300"
+        >
+          full topology →
+        </a>
+      </div>
+      <div className="mt-5 grid gap-4 md:grid-cols-[auto_1fr] md:items-center md:gap-8">
+        <MeshSvg nodes={nodes} />
+        <div className="flex flex-col gap-3">
+          <div className="flex items-baseline gap-3">
+            <span className="num text-display font-semibold tracking-tight text-accent-400">
+              {totalCount > 0 ? `${verifiedCount}/${totalCount}` : "—"}
+            </span>
+            <span className="text-body-sm text-ink-300">
+              settlers verified on-chain &amp; meshed across two cities
+            </span>
+          </div>
+          <div className="grid gap-1.5 text-caption md:grid-cols-2">
+            {nodes.length === 0
+              ? Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-4 w-full animate-pulse rounded-sm bg-ink-800" />
+                ))
+              : nodes.map((n) => {
+                  const ok = n.online && n.registered && n.pubkeyMatchesEns;
+                  return (
+                    <div key={n.spec.name} className="flex items-center gap-2 truncate">
+                      <span
+                        className={`inline-block h-1.5 w-1.5 rounded-md ${
+                          ok ? "bg-accent-500" : "bg-warn-500"
+                        }`}
+                        aria-hidden
+                      />
+                      <code className="num truncate text-ink-200">
+                        {n.spec.ensFqn ?? `settler-${n.spec.name.toLowerCase()}.synodai.eth`}
+                      </code>
+                      <span className="ml-auto truncate text-ink-500">
+                        {n.spec.ensRole ?? "-"}
+                      </span>
+                    </div>
+                  );
+                })}
+          </div>
+          <div className="border-t border-ink-800 pt-2 text-micro text-ink-500">
+            source: <code className="num text-ink-300">{view?.ensParent ?? "synodai.eth"}</code>
+            {" · "}registry <code className="num text-ink-300">{view?.registeredSettlerCount ?? "—"}</code>
+            {" · "}ens <code className="num text-ink-300">{view?.ensSubnameCount ?? "—"}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MeshSvg({ nodes }: { nodes: NetworkNode[] }) {
+  // 4-position layout. A is the hub; B/C are co-located in Frankfurt; D is in Toronto.
+  const pos: Record<string, { x: number; y: number }> = {
+    A: { x: 80, y: 28 },
+    B: { x: 28, y: 92 },
+    C: { x: 132, y: 92 },
+    D: { x: 80, y: 156 },
+  };
+  // For an idle initial render we still draw the topology (greyed out)
+  const drawn = nodes.length > 0 ? nodes : [
+    { spec: { name: "A" }, online: false, registered: false, pubkeyMatchesEns: false },
+    { spec: { name: "B" }, online: false, registered: false, pubkeyMatchesEns: false },
+    { spec: { name: "C" }, online: false, registered: false, pubkeyMatchesEns: false },
+    { spec: { name: "D" }, online: false, registered: false, pubkeyMatchesEns: false },
+  ];
+  // Edges: every node ↔ A, plus B↔C, plus D↔A across cities (highlight)
+  const edges = [
+    { from: "A", to: "B" },
+    { from: "A", to: "C" },
+    { from: "A", to: "D", crossCity: true },
+    { from: "B", to: "C" },
+  ];
+  return (
+    <svg viewBox="0 0 160 184" className="h-44 w-44 shrink-0">
+      {edges.map((e, i) => {
+        const a = pos[e.from];
+        const b = pos[e.to];
+        const aOK = drawn.find((n) => n.spec.name === e.from)?.online;
+        const bOK = drawn.find((n) => n.spec.name === e.to)?.online;
+        const up = !!(aOK && bOK);
+        return (
+          <line
+            key={i}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke={up ? "rgb(0, 229, 160)" : "rgb(68, 78, 97)"}
+            strokeWidth={up ? 1.6 : 1}
+            strokeDasharray={up ? "" : "3 3"}
+            style={up ? { filter: "drop-shadow(0 0 6px rgba(0,229,160,0.55))" } : undefined}
+          />
+        );
+      })}
+      {drawn.map((n) => {
+        const p = pos[n.spec.name];
+        if (!p) return null;
+        const ok = n.online && n.registered && n.pubkeyMatchesEns;
+        const fill = ok ? "rgb(0, 229, 160)" : "rgb(108, 118, 137)";
+        return (
+          <g key={n.spec.name}>
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r={11}
+              fill={fill}
+              fillOpacity={ok ? 0.18 : 0.08}
+              stroke={fill}
+              strokeWidth={1.5}
+            />
+            <text
+              x={p.x}
+              y={p.y + 4}
+              textAnchor="middle"
+              fontSize={11}
+              fill={fill}
+              fontWeight={600}
+              fontFamily="var(--font-geist-mono)"
+            >
+              {n.spec.name}
+            </text>
+          </g>
+        );
+      })}
+      {/* City labels */}
+      <text x={28} y={120} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)">FRA</text>
+      <text x={132} y={120} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)" textAnchor="end">FRA</text>
+      <text x={80} y={178} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)" textAnchor="middle">YYZ</text>
+      <text x={80} y={20} fontSize={7} fill="rgb(108, 118, 137)" fontFamily="var(--font-geist-mono)" textAnchor="middle">FRA</text>
+    </svg>
+  );
+}
+
+/* ============================================================
    RECENT JUDGMENTS — top 3 from /api/gallery
    ============================================================ */
 type GalleryItem = {
@@ -213,8 +432,20 @@ type GalleryItem = {
   judgment: { fqn: string; ensAppUrl: string } | null;
 };
 
+const RECENT_CACHE_KEY = "synod:lastRecent";
+
 function RecentJudgments() {
-  const [items, setItems] = useState<GalleryItem[]>([]);
+  const [items, setItems] = useState<GalleryItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(RECENT_CACHE_KEY);
+      return raw ? (JSON.parse(raw) as GalleryItem[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loaded, setLoaded] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -222,14 +453,21 @@ function RecentJudgments() {
         const r = await fetch("/api/gallery", { cache: "no-store" });
         if (r.ok && !cancelled) {
           const j = (await r.json()) as { items: GalleryItem[] };
-          setItems(j.items?.slice(0, 3) ?? []);
+          const trimmed = j.items?.slice(0, 3) ?? [];
+          setItems(trimmed);
+          setLoaded(true);
+          try {
+            window.localStorage.setItem(RECENT_CACHE_KEY, JSON.stringify(trimmed));
+          } catch {
+            /* private mode etc. */
+          }
         }
       } catch {
         /* tolerate */
       }
     };
     tick();
-    const id = setInterval(tick, 30_000);
+    const id = setInterval(tick, 60_000);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -237,9 +475,37 @@ function RecentJudgments() {
   }, []);
 
   if (items.length === 0) {
+    // Shimmer skeleton cards — preserves layout, no jarring empty state
     return (
-      <div className="rounded-md border border-dashed border-ink-700 bg-ink-900/30 px-6 py-10 text-center text-body-sm text-ink-500">
-        loading recent settlements…
+      <div className="grid gap-3 md:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="flex flex-col gap-3 rounded-md border border-ink-700 bg-ink-900/40 p-5"
+          >
+            <div className="flex items-baseline justify-between">
+              <div className="h-2 w-16 animate-pulse rounded-sm bg-ink-700" />
+              <div className="h-2 w-10 animate-pulse rounded-sm bg-ink-700" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="h-3 w-full animate-pulse rounded-sm bg-ink-800" />
+              <div className="h-3 w-5/6 animate-pulse rounded-sm bg-ink-800" />
+              <div className="h-3 w-3/4 animate-pulse rounded-sm bg-ink-800" />
+            </div>
+            <div className="mt-auto flex items-baseline gap-2">
+              <div className="h-2 w-12 animate-pulse rounded-sm bg-ink-700" />
+              <div className="h-5 w-8 animate-pulse rounded-sm bg-ink-700" />
+            </div>
+            <div className="border-t border-ink-800 pt-3">
+              <div className="h-2 w-20 animate-pulse rounded-sm bg-ink-700" />
+            </div>
+          </div>
+        ))}
+        {!loaded && (
+          <div className="col-span-full text-center text-micro text-ink-500">
+            loading recent settlements from on-chain + 0G…
+          </div>
+        )}
       </div>
     );
   }
@@ -415,8 +681,13 @@ export default function HomePage() {
       <NavBar />
       <main>
         {/* HERO — display-xl claim + receipt-motif live stats. The first impression. */}
-        <section className="mx-auto max-w-7xl px-6 pt-12 pb-12 md:pt-20 md:pb-20">
+        <section className="mx-auto max-w-7xl px-6 pt-12 pb-12 md:pt-20 md:pb-16">
           <Hero stats={stats} />
+        </section>
+
+        {/* LIVE MESH STRIP — preview of /network without leaving the homepage */}
+        <section className="mx-auto max-w-7xl px-6 pb-16">
+          <LiveMeshStrip />
         </section>
 
         {/* TRY IT — inject form. The protocol is hands-on. */}
