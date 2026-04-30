@@ -43,7 +43,22 @@ function readMap<T>(p: string): Record<string, T> {
   }
 }
 
+// Server-side cache. Each call enriches all transcripts via 0G HTTP fetches
+// — without this, every poller (homepage RecentJudgments at 30s, /gallery
+// at 15s, plus any judges hitting it) triggers N outbound fetches and a
+// memory spike. 60s TTL keeps the data fresh enough for demo while keeping
+// the heap small.
+type CachedView = { count: number; items: unknown[]; serverTimeMs: number };
+let cached: { view: CachedView; expiresAt: number } | null = null;
+const CACHE_TTL_MS = 60_000;
+
 export async function GET(): Promise<NextResponse> {
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return NextResponse.json(cached.view, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const transcriptsP =
     process.env.SYNOD_TRANSCRIPTS_FILE ??
     path.resolve(/*turbopackIgnore: true*/ process.cwd(), "..", "runtime", "transcripts.json");
@@ -112,8 +127,14 @@ export async function GET(): Promise<NextResponse> {
 
   enriched.sort((a, b) => b.postedAt - a.postedAt);
 
-  return NextResponse.json(
-    { count: enriched.length, items: enriched, serverTimeMs: Date.now() },
-    { headers: { "Cache-Control": "no-store" } }
-  );
+  const view: CachedView = {
+    count: enriched.length,
+    items: enriched,
+    serverTimeMs: Date.now(),
+  };
+  cached = { view, expiresAt: Date.now() + CACHE_TTL_MS };
+
+  return NextResponse.json(view, {
+    headers: { "Cache-Control": "no-store" },
+  });
 }
