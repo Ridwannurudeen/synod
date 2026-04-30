@@ -38,6 +38,7 @@ from .protocol import (
     canonical_json,
     validate_hex32,
 )
+from . import storage_0g
 
 logger = logging.getLogger(__name__)
 
@@ -480,3 +481,43 @@ class SettlerAgent:
         except Exception as e:
             logger.exception("on-chain submission failed for q=%s: %s",
                              question_id[:16], e)
+            return
+
+        # Off-chain: persist the full deliberation transcript to 0G Storage so
+        # anyone can recover the per-settler reasoning. Only the designated
+        # poster uploads (we already returned above for non-posters), so each
+        # settled question writes exactly one transcript.
+        if storage_0g.is_enabled():
+            try:
+                transcript = {
+                    "question_id": question_id,
+                    "question": state.question.to_dict(),
+                    "outcome": int(outcome),
+                    "quorum_size": int(quorum_size),
+                    "weighted_score": float(weighted_score),
+                    "votes": votes,
+                    "onchain": {
+                        "tx_hash": tx_hash,
+                        "registry_address": getattr(self.onchain, "registry_address", None)
+                        or getattr(self.onchain.registry, "address", None),
+                        "chain_id": int(self.onchain.w3.eth.chain_id),
+                    },
+                    "posted_by_pubkey": self.identity.public_key_hex,
+                    "posted_at": int(time.time()),
+                }
+                receipt_0g = storage_0g.upload_transcript(transcript)
+                storage_0g.save_transcript_index(question_id, receipt_0g)
+                logger.info(
+                    "0G q=%s root=%s tx=%s bytes=%d",
+                    question_id[:16],
+                    receipt_0g.root,
+                    receipt_0g.tx_hash,
+                    receipt_0g.bytes_uploaded,
+                )
+            except Exception as e:
+                # Non-fatal — the on-chain settlement is the primary record;
+                # 0G is the auxiliary transcript layer. Log loud and continue.
+                logger.exception(
+                    "0G transcript upload failed for q=%s: %s (settlement is on-chain regardless)",
+                    question_id[:16], e,
+                )
