@@ -141,6 +141,84 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
   );
 }
 
+type GalleryQuickPick = {
+  questionId: string;
+  prompt: string;
+  outcomeLabel: string;
+};
+
+function RecentSettlementsToVerify({ onPick }: { onPick: (qid: string) => void }) {
+  const [items, setItems] = useState<GalleryQuickPick[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/gallery", { cache: "no-store" });
+        if (r.ok && !cancelled) {
+          const j = (await r.json()) as { items: GalleryQuickPick[] };
+          setItems(j.items?.slice(0, 5) ?? []);
+        }
+      } catch {
+        /* tolerate */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (items.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-md border border-dashed border-ink-700 bg-ink-900/30 p-5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-500">
+          or pick a recent one
+        </span>
+        <Link
+          href="/gallery"
+          className="text-caption text-accent-300 transition-colors hover:text-accent-200"
+        >
+          full gallery →
+        </Link>
+      </div>
+      <ul className="flex flex-col divide-y divide-ink-800/60 text-caption">
+        {items.map((it) => {
+          const qidNorm = it.questionId.replace(/^0x/, "");
+          return (
+            <li key={it.questionId} className="py-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(qidNorm);
+                  // Trigger the form submit via the existing flow:
+                  // we set the input then let the user click verify, OR
+                  // for a one-click experience: redirect to the deeplink.
+                  if (typeof window !== "undefined") {
+                    window.history.replaceState({}, "", `/verify?qid=${qidNorm}`);
+                    window.location.reload();
+                  }
+                }}
+                className="group flex w-full items-baseline justify-between gap-4 text-left"
+              >
+                <span className="line-clamp-1 flex-1 text-body-sm text-ink-200 group-hover:text-accent-200">
+                  {it.prompt || (
+                    <code className="num text-ink-400">0x{qidNorm.slice(0, 12)}…</code>
+                  )}
+                </span>
+                <span className="num shrink-0 text-eyebrow uppercase tracking-[0.18em] text-accent-400/80">
+                  outcome {it.outcomeLabel}
+                </span>
+                <span className="shrink-0 text-ink-500 group-hover:text-accent-300">→</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function ProvenancePanel({ qidHex }: { qidHex: string }) {
   const [transcript, setTranscript] = useState<TranscriptInfo | null>(null);
   const [judgment, setJudgment] = useState<JudgmentInfo | null>(null);
@@ -350,6 +428,8 @@ export default function VerifyPage() {
           </span>
         </div>
       </form>
+
+      {!view && !loading && !topError && <RecentSettlementsToVerify onPick={(qid) => setQuestionId(qid)} />}
 
       {topError && (
         <div className="rounded-md border border-alert-600 bg-alert-600/15 px-3 py-2 text-body-sm text-alert-400">
