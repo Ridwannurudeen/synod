@@ -187,6 +187,34 @@ A judge can verify any settled question's reasoning chain in three independent s
 2. 0G Storage: `GET /file?root=…` returns the full transcript with each settler's reasoning
 3. ENS: the judgment subname's `synod.transcript-cid` ties (1) and (2) together with a public, queryable name
 
+### ERC-7857 iNFT minting (NEW)
+
+Each settler is now also minted as an **ERC-7857 iNFT on 0G Chain Galileo** using 0G Labs' reference implementation (`github.com/0glabs/0g-agent-nft`, branch `eip-7857-draft`). Live deployment:
+
+| Component | Address |
+|---|---|
+| AgentNFT (proxy) | [`0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85`](https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85) |
+| Verifier (stub) | `0x5171e1F5d16647096f090Cda5faA2550Db5EF6fe` |
+| Deployer | `0xc9c0754fDB2C22Fd19B5B649e1e60eE9d1Ccca3f` |
+
+**Minted iNFTs** (each owned by the settler's EVM address; `dataHash = keccak256(role ‖ ed25519 pubkey ‖ ENS fqn)`):
+
+| tokenId | settler | owner | tx |
+|---|---|---|---|
+| 0 | sonnet | 0xA783… | [`0x01504f51…`](https://chainscan-galileo.0g.ai/tx/0x01504f51e4fd3cf27296fec2fa6b562c11a149210e75c70e0f7703971c19ac7a) |
+| 1 | haiku | 0x6E8b… | [`0xadfcf922…`](https://chainscan-galileo.0g.ai/tx/0xadfcf922750b4e8cb41b9a0f7daca9b695460fcead65868d8dbfb1ca05683aca) |
+| 2 | gemini | 0x0f09… | [`0x83361c7f…`](https://chainscan-galileo.0g.ai/tx/0x83361c7fdeb5636a0c2506b534abfc8db5386d901deb5772e38654fbff50739f) |
+| 3 | opus | 0x44e7… | [`0x8039cee0…`](https://chainscan-galileo.0g.ai/tx/0x8039cee026ec75680a7ee664e8ace968f740151b14ec00fd5baf60ae75cbf80b) |
+
+**Honest scope note:** This deployment uses a stubbed `IERC7857DataVerifier` (returns `isValid=true`) rather than a real TEE attestation, and the dataHash binds settler identity (role + pubkey + ENS subname) but does not yet carry an encrypted intelligence payload via the full sealed-key flow. Both are achievable v1.1 work — the contract surface is in place and the standard mint flow works end-to-end. We chose to ship a real ERC-7857 deployment over a half-finished encryption pipeline.
+
+This is a 4th independent piece of the swarm's identity stack, on top of the 0G Storage transcripts:
+
+- **Gensyn L2** — settlement record (canonical outcome, signed votes)
+- **0G Storage** — full deliberation transcript (HTTP-retrievable)
+- **Ethereum mainnet ENS** — agent identity + transferable judgment subnames
+- **0G Chain ERC-7857 iNFTs** — each settler minted, ownable, transferable per the standard
+
 ### Verified live
 - 0G key wallet: `0xc9c0754fDB2C22Fd19B5B649e1e60eE9d1Ccca3f` (0G Galileo testnet, chain 16602)
 - First persisted transcript: question `4320be…0823`, root `0xd4d7dc99…a18cf2`, 2141 bytes

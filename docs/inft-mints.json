@@ -1,0 +1,59 @@
+{
+  "contract": "0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85",
+  "verifier": "0x5171e1F5d16647096f090Cda5faA2550Db5EF6fe",
+  "implementation": "0x4eC373111616a104DE83402B92966d6efca0ca9E",
+  "beacon": "0x60dEc356D2b76a7Ee7d02Ad045B63Ccaa290c339",
+  "chain": "0G Galileo testnet",
+  "chainId": 16602,
+  "rpc": "https://evmrpc-testnet.0g.ai",
+  "explorer_contract": "https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85",
+  "deployer": "0xc9c0754fDB2C22Fd19B5B649e1e60eE9d1Ccca3f",
+  "standard": "ERC-7857 (draft)",
+  "scope_note": "Hackathon-scoped deployment using 0G Labs reference implementation. Stub verifier (returns isValid=true, no real TEE attestation). dataHash binds settler identity (role || pubkey || ENS fqn) but no encrypted intelligence pipeline. Sufficient to demonstrate the iNFT primitive; production v1.1 would add the full sealed-key + 0G Storage encryption flow.",
+  "tokens": [
+    {
+      "name": "settler-a",
+      "fqn": "settler-a.synodai.eth",
+      "role": "anthropic-claude-sonnet-4-6",
+      "owner": "0xA783781f019515D6cAA138Ebb4A391B2162b4d04",
+      "tokenId": 0,
+      "dataHash": "0xcc3c44aebb7c1ebbb1161efc510ae9e04c1b5af8b4ef57f5386339d50b30f755",
+      "description": "anthropic-claude-sonnet-4-6 \u00b7 ed25519 0x752b498760a85933\u2026 \u00b7 settler-a.synodai.eth",
+      "tx": "0x01504f51e4fd3cf27296fec2fa6b562c11a149210e75c70e0f7703971c19ac7a",
+      "explorer": "https://chainscan-galileo.0g.ai/tx/0x01504f51e4fd3cf27296fec2fa6b562c11a149210e75c70e0f7703971c19ac7a"
+    },
+    {
+      "name": "settler-b",
+      "fqn": "settler-b.synodai.eth",
+      "role": "anthropic-claude-haiku-4-5",
+      "owner": "0x6E8b7de747a5963E93f57C52c8b0583EE0297eEE",
+      "tokenId": 1,
+      "dataHash": "0x5f6585a19dcfed524eaf94973d43e4356aec9e36ce21cbc062b37c7431de8312",
+      "description": "anthropic-claude-haiku-4-5 \u00b7 ed25519 0xb52678486f667f17\u2026 \u00b7 settler-b.synodai.eth",
+      "tx": "0xadfcf922750b4e8cb41b9a0f7daca9b695460fcead65868d8dbfb1ca05683aca",
+      "explorer": "https://chainscan-galileo.0g.ai/tx/0xadfcf922750b4e8cb41b9a0f7daca9b695460fcead65868d8dbfb1ca05683aca"
+    },
+    {
+      "name": "settler-c",
+      "fqn": "settler-c.synodai.eth",
+      "role": "google-gemini-2.5-flash",
+      "owner": "0x0f094f5456e3fBf237C5ED57d715c2f1Af15CB38",
+      "tokenId": 2,
+      "dataHash": "0x85742457d4a67d5dbad653d75b74b7d35886400b231cc6a9def5c03f91c5d7ef",
+      "description": "google-gemini-2.5-flash \u00b7 ed25519 0xdbc4cebd7a1bb7a4\u2026 \u00b7 settler-c.synodai.eth",
+      "tx": "0x83361c7fdeb5636a0c2506b534abfc8db5386d901deb5772e38654fbff50739f",
+      "explorer": "https://chainscan-galileo.0g.ai/tx/0x83361c7fdeb5636a0c2506b534abfc8db5386d901deb5772e38654fbff50739f"
+    },
+    {
+      "name": "settler-d",
+      "fqn": "settler-d.synodai.eth",
+      "role": "anthropic-claude-opus-4-7",
+      "owner": "0x44e795676429606a9c00e405fc9b80d4B53b80e3",
+      "tokenId": 3,
+      "dataHash": "0x6ce0027d78a5327adbd945ca4fb9aa9b2956fda0e5bb78b4ebe1a1bdf9defd5a",
+      "description": "anthropic-claude-opus-4-7 \u00b7 ed25519 0xab3a7aba135d3b24\u2026 \u00b7 settler-d.synodai.eth",
+      "tx": "0x8039cee026ec75680a7ee664e8ace968f740151b14ec00fd5baf60ae75cbf80b",
+      "explorer": "https://chainscan-galileo.0g.ai/tx/0x8039cee026ec75680a7ee664e8ace968f740151b14ec00fd5baf60ae75cbf80b"
+    }
+  ]
+}
