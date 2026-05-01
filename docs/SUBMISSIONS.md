@@ -59,6 +59,9 @@ Synod is the AXL-native flagship use case: trust-minimized AI consensus infrastr
 ### Project name + short description
 **Synod** — `synodai.eth` is the bootloader for the entire AI consensus protocol: registry contract address, RPC URL, chain id, threshold, and the canonical settler list all live in on-chain text records on Ethereum mainnet. Cold-boot a UI from one ENS name; it self-configures.
 
+### Alignment with ENS's published direction
+The ENS team has explicitly endorsed subname-per-agent + text records + ERC-8004 reputation as the AI agent identity pattern: [*ENS as the AI Agent Identity Layer (with ERC-8004)*](https://ens.domains/blog/post/ens-ai-agent-erc8004). Synod implements this pattern faithfully — and adds the bootloader and judgment-subname extensions as described below.
+
 ### How ENS does real work (not cosmetic)
 
 **Parent record (`synodai.eth`)** holds the network's runtime config in text records:
@@ -134,6 +137,9 @@ Browse all of Synod's judgments by enumerating subnames under `synodai.eth`. ENS
 
 ### Bonus: ENSIP draft
 We've drafted an informal ENSIP at `docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md` proposing the parent/subname/judgment-subname schema as a standard for AI agent identity in ENS. This is the primitive other AI projects can adopt. Not just "Synod uses ENS"; we want this to become "AI agents use ENS, here's how."
+
+### Alignment with ENS's published direction
+The ENS team's blog post [*ENS as the AI Agent Identity Layer (with ERC-8004)*](https://ens.domains/blog/post/ens-ai-agent-erc8004) explicitly endorses subname-per-agent + text records + ERC-8004 reputation references — exactly the pattern Synod implements. We converged on this schema independently while building, and the ENSIP draft formalizes it for cross-project adoption.
 
 ---
 
