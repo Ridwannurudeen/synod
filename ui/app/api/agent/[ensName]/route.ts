@@ -56,6 +56,7 @@ const AXL_API_MAP: Record<string, string> = {
   "settler-a.synodai.eth": "http://127.0.0.1:9002",
   "settler-b.synodai.eth": "http://127.0.0.1:9012",
   "settler-c.synodai.eth": "http://127.0.0.1:9022",
+  "settler-d.synodai.eth": "http://38.49.212.102:9203",
 };
 
 export async function GET(
@@ -128,7 +129,6 @@ export async function GET(
         registered: boolean;
         axlPubKey?: string;
         modelTag?: string;
-        bondWei?: string;
         pubkeyMatchesEns?: boolean;
       }
     | null = null;
@@ -141,15 +141,14 @@ export async function GET(
         abi: SYNOD_REGISTRY_ABI,
         functionName: "settlers",
         args: [addr],
-      })) as readonly [boolean, Hex, string, bigint];
-      const [registered, axlPubKey, modelTag, bond] = tuple;
+      })) as readonly [boolean, Hex, string];
+      const [registered, axlPubKey, modelTag] = tuple;
       const axlClean = axlPubKey?.startsWith("0x") ? axlPubKey.slice(2) : axlPubKey;
       registryRaw = {
         address: cfg.registryAddress,
         registered,
         axlPubKey: axlClean,
         modelTag,
-        bondWei: bond.toString(),
         pubkeyMatchesEns:
           !!pubkey && !!axlClean && pubkey.toLowerCase() === axlClean.toLowerCase(),
       };
