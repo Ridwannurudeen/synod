@@ -121,20 +121,28 @@ All scenarios assume:
 
 ---
 
-## Scenario 5 — 0G Transcript Verification (25s)
+## Scenario 5 — 0G Transcript + iNFT Fleet (35s)
 
-**Why**: 0G Track 2 qualification — shared decentralized memory, tamper-evident.
+**Why**: 0G Track 2 qualification — shared decentralized memory + ERC-7857 iNFT standard adoption (most past Track 2 winners did NOT ship the contract).
 
 **Setup**
-- /verify page open with a settled question
-- ProvenancePanel showing 0G transcript card
+- /verify page open with a settled question, ProvenancePanel showing 0G transcript card
+- Second tab: homepage scrolled to the "iNFT fleet" section
+- Third tab pre-loaded: chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85
 
-**On-camera**
+**On-camera (2-part)**
+
+Part A — transcript (15s):
 1. Click "fetch raw transcript →" on the 0G card
 2. **Visible**: browser opens `https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` showing the full JSON: question, outcomes, votes, signatures, on-chain tx
-3. Switch tab → click "0G Chain submission tx ↗"
-4. **Visible**: chainscan-galileo.0g.ai opens the on-chain log entry transaction
-5. **Voiceover**: "Every deliberation is persisted to 0G Storage. Pure HTTP retrieval. No SDK, no auth. The full reasoning chain — every model's argument, signature, signed vote — is recoverable from a public indexer in a single GET request."
+3. **Voiceover**: "Every deliberation persists to 0G Storage. Pure HTTP retrieval. No SDK, no auth — the full reasoning chain is recoverable from a public indexer in a single GET."
+
+Part B — iNFT (20s):
+4. Switch to homepage tab → scroll to "iNFT fleet" section. Show 4 tokens, IDs 0-3, one per settler.
+5. Click any token card → opens `chainscan-galileo.0g.ai/tx/...` showing the actual mint transaction.
+6. **Voiceover**: "Each settler is also minted as an ERC-7857 iNFT on 0G Chain — the agent NFT standard, owner-equals-settler, transferable per the spec. We're using 0G Labs' own reference contract. Stubbed verifier this round; v1.1 adds the full sealed-key encryption pipeline."
+
+**Optional 5s coda** (if time): scroll to the "scope note · what's stubbed and what's real" expandable on the iNFT section. Show that we're being explicit about scope.
 
 ---
 

@@ -850,6 +850,123 @@ function HowItWorks() {
 }
 
 /* ============================================================
+   iNFT FLEET — 4 ERC-7857 iNFTs minted on 0G Galileo
+   Pulls /api/inft, surfaces token IDs + chainscan links per settler.
+   ============================================================ */
+type InftToken = {
+  name: string;
+  fqn: string;
+  role: string;
+  owner: string;
+  tokenId: number;
+  dataHash: string;
+  description: string;
+  tx: string;
+  explorer: string;
+};
+type InftView = {
+  contract: string;
+  verifier: string;
+  chain: string;
+  chainId: number;
+  explorer_contract: string;
+  standard: string;
+  scope_note: string;
+  tokens: InftToken[];
+};
+
+function InftFleet() {
+  const [view, setView] = useState<InftView | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/inft", { cache: "no-store" });
+        if (r.ok && !cancelled) setView((await r.json()) as InftView);
+      } catch {
+        /* tolerate */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!view) {
+    return (
+      <div className="rounded-md border border-dashed border-ink-700 bg-ink-900/30 px-6 py-8 text-center text-body-sm text-ink-500">
+        loading iNFT mint record…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-3 rounded-md border border-accent-700/30 bg-accent-700/[0.04] px-5 py-4">
+        <div>
+          <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
+            ERC-7857 contract on 0G Galileo
+          </span>
+          <div className="mt-1 flex items-baseline gap-3">
+            <code className="num text-body text-ink-100">{view.contract.slice(0, 10)}…{view.contract.slice(-6)}</code>
+            <a
+              href={view.explorer_contract}
+              target="_blank"
+              rel="noreferrer"
+              className="text-caption text-accent-300 hover:text-accent-200"
+            >
+              chainscan ↗
+            </a>
+          </div>
+        </div>
+        <div className="flex flex-col items-end">
+          <span className="num halo-accent text-h1 font-semibold tracking-tight text-accent-400">
+            {view.tokens.length}
+          </span>
+          <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">
+            iNFTs minted
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        {view.tokens.map((t) => (
+          <a
+            key={t.tokenId}
+            href={t.explorer}
+            target="_blank"
+            rel="noreferrer"
+            className="group flex flex-col gap-2 rounded-md border border-ink-700 bg-ink-900/40 p-4 transition-colors hover:border-accent-700/50 hover:bg-ink-900/60"
+          >
+            <div className="flex items-baseline justify-between">
+              <span className="num text-h3 font-semibold tracking-tight text-accent-400">
+                #{t.tokenId}
+              </span>
+              <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">
+                {t.name}
+              </span>
+            </div>
+            <code className="num truncate text-caption text-ink-300">{t.fqn}</code>
+            <div className="text-caption text-ink-400">{t.role}</div>
+            <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-ink-800 pt-2 text-caption">
+              <span className="text-ink-500 group-hover:text-accent-300 transition-colors">mint tx</span>
+              <code className="num truncate text-ink-400">{t.tx.slice(0, 10)}…</code>
+            </div>
+          </a>
+        ))}
+      </div>
+
+      <details className="rounded-md border border-ink-800 bg-ink-900/30 p-4 text-caption text-ink-400">
+        <summary className="cursor-pointer text-eyebrow uppercase tracking-[0.18em] text-ink-500 hover:text-ink-300">
+          scope note · what's stubbed and what's real
+        </summary>
+        <p className="mt-3 leading-relaxed">{view.scope_note}</p>
+      </details>
+    </div>
+  );
+}
+
+/* ============================================================
    RECENT JUDGMENTS — top 3 from /api/gallery
    ============================================================ */
 type GalleryItem = {
@@ -1003,11 +1120,11 @@ function BuiltOn({ stats }: { stats: ProtocolStats | null }) {
       tone: "rgb(255, 145, 90)",
     },
     {
-      name: "0G Storage",
-      role: "Decentralized memory",
-      detail: "Every full deliberation transcript persisted on Galileo. Public HTTP retrieval. No SDK, no auth.",
-      stat: stats ? `${stats.transcriptsKB} kB on chain` : "0G Galileo",
-      url: "https://storagescan-galileo.0g.ai/",
+      name: "0G Storage + iNFT",
+      role: "Memory + ERC-7857",
+      detail: "Every transcript on 0G Storage (HTTP retrieval, no auth). Each settler also minted as an ERC-7857 iNFT on 0G Chain — the agent NFT standard, not just ERC-721.",
+      stat: stats ? `${stats.transcriptsKB} kB · 4 iNFTs` : "0G Galileo",
+      url: "https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85",
       mark: "◇",
       tone: "rgb(0, 229, 160)",
     },
@@ -1453,6 +1570,16 @@ export default function HomePage() {
             />
             <BuiltOn stats={stats} />
           </div>
+        </section>
+
+        {/* iNFT FLEET — ERC-7857 mints on 0G Galileo */}
+        <section className="mx-auto max-w-7xl px-6 py-16">
+          <SectionHeader
+            eyebrow="iNFT fleet"
+            title="Each settler, minted on 0G Chain"
+            sub="ERC-7857 (draft) — 0G Labs' own standard for agent NFTs with verifiable transfer of metadata. Reference contract deployed on Galileo, one iNFT per settler, owner = settler's EVM address."
+          />
+          <InftFleet />
         </section>
       </main>
       <DeepFooter />
