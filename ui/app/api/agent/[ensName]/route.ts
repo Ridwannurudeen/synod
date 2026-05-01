@@ -136,12 +136,15 @@ export async function GET(
   if (cfg) {
     try {
       const l2 = createPublicClient({ transport: http(cfg.rpcUrl) });
+      // Tuple shape varies: legacy registries return 3 fields, newer
+      // (with bond) return 4. Cast through unknown so we destructure only
+      // the first 3 either way.
       const tuple = (await l2.readContract({
         address: cfg.registryAddress,
         abi: SYNOD_REGISTRY_ABI,
         functionName: "settlers",
         args: [addr],
-      })) as readonly [boolean, Hex, string];
+      })) as unknown as readonly [boolean, Hex, string, ...unknown[]];
       const [registered, axlPubKey, modelTag] = tuple;
       const axlClean = axlPubKey?.startsWith("0x") ? axlPubKey.slice(2) : axlPubKey;
       registryRaw = {
