@@ -276,12 +276,14 @@ export async function gatherNetworkState(): Promise<NetworkView> {
       await Promise.all(
         out.nodes.map(async (node) => {
           try {
+            // Cast through unknown so this builds against both legacy (3-
+            // field) and bonded (4-field) settlers ABI shapes.
             const tuple = (await client.readContract({
               address: cfg.registryAddress as Hex,
               abi: SYNOD_REGISTRY_ABI,
               functionName: "settlers",
               args: [node.spec.evmAddress as Hex],
-            })) as [boolean, string, string, bigint];
+            })) as unknown as readonly [boolean, string, string, ...unknown[]];
             const [registered, axlPubKey, modelTag] = tuple;
             node.registered = registered;
             node.registeredAxlPubKey =
