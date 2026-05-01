@@ -20,14 +20,35 @@ contract SynodRegistryTest is Test {
     bytes internal proof = bytes("{\"protocol_version\":1,\"votes\":[]}");
 
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
+    event SecurityConfigured(
+        uint256 challengeWindowSeconds,
+        uint256 minSettlerBond,
+        uint256 minChallengeBond
+    );
     event SettlerRegistered(address indexed settler, bytes32 axlPubKey, string modelTag);
     event SettlerRevoked(address indexed settler);
+    event SettlerBondDeposited(address indexed settler, uint256 amount, uint256 newBond);
+    event SettlerBondWithdrawn(address indexed settler, uint256 amount, uint256 newBond);
     event SettlementRecorded(
         bytes32 indexed questionId,
         uint8 outcome,
         uint256 quorumSize,
         uint256 weightedScoreScaled,
         address indexed postedBy
+    );
+    event SettlementFinalized(bytes32 indexed questionId);
+    event SettlementChallenged(
+        bytes32 indexed questionId,
+        address indexed challenger,
+        bytes32 evidenceHash,
+        uint256 challengeBond,
+        string reason
+    );
+    event ChallengeResolved(
+        bytes32 indexed questionId,
+        bool sustained,
+        address indexed recipient,
+        uint256 payout
     );
 
     function setUp() public {
@@ -71,6 +92,34 @@ contract SynodRegistryTest is Test {
         registry.registerSettler(settler1, axlKey1, "claude-sonnet-4-6");
     }
 
+    function test_ConfigureSecurity() public {
+        vm.expectEmit(false, false, false, true);
+        emit SecurityConfigured(1 days, 1 ether, 0.1 ether);
+
+        vm.prank(admin);
+        registry.configureSecurity(1 days, 1 ether, 0.1 ether);
+
+        assertEq(registry.challengeWindowSeconds(), 1 days);
+        assertEq(registry.minSettlerBond(), 1 ether);
+        assertEq(registry.minChallengeBond(), 0.1 ether);
+    }
+
+    function test_ConfigureSecurity_RevertsIfNotAdmin() public {
+        vm.expectRevert(SynodRegistry.NotAdmin.selector);
+        vm.prank(stranger);
+        registry.configureSecurity(1 days, 1 ether, 0.1 ether);
+    }
+
+    function test_ConfigureSecurity_RevertsWindowWithoutBonds() public {
+        vm.expectRevert(SynodRegistry.InvalidSecurityConfig.selector);
+        vm.prank(admin);
+        registry.configureSecurity(1 days, 1 ether, 0);
+
+        vm.expectRevert(SynodRegistry.InvalidSecurityConfig.selector);
+        vm.prank(admin);
+        registry.configureSecurity(1 days, 0, 0.1 ether);
+    }
+
     // --- registration ------------------------------------------------------
 
     function test_RegisterSettler() public {
@@ -79,12 +128,27 @@ contract SynodRegistryTest is Test {
         vm.prank(admin);
         registry.registerSettler(settler1, axlKey1, "claude-sonnet-4-6");
 
-        (bool registered, bytes32 axl, string memory tag) = registry.settlers(settler1);
+        (bool registered, bytes32 axl, string memory tag, uint256 bond) =
+            registry.settlers(settler1);
         assertTrue(registered);
         assertEq(axl, axlKey1);
         assertEq(tag, "claude-sonnet-4-6");
+        assertEq(bond, 0);
         assertEq(registry.registeredSettlerCount(), 1);
         assertTrue(registry.registeredAxlPubKeys(axlKey1));
+    }
+
+    function test_RegisterSettler_WithInitialBond() public {
+        vm.deal(admin, 1 ether);
+        vm.expectEmit(true, false, false, true);
+        emit SettlerBondDeposited(settler1, 1 ether, 1 ether);
+
+        vm.prank(admin);
+        registry.registerSettler{value: 1 ether}(settler1, axlKey1, "x");
+
+        (,,, uint256 bond) = registry.settlers(settler1);
+        assertEq(bond, 1 ether);
+        assertEq(address(registry).balance, 1 ether);
     }
 
     function test_RegisterSettler_RevertsIfNotAdmin() public {
@@ -131,10 +195,23 @@ contract SynodRegistryTest is Test {
         vm.prank(admin);
         registry.revokeSettler(settler1);
 
-        (bool registered,,) = registry.settlers(settler1);
+        (bool registered,,,) = registry.settlers(settler1);
         assertFalse(registered);
         assertEq(registry.registeredSettlerCount(), 0);
         assertFalse(registry.registeredAxlPubKeys(axlKey1));
+    }
+
+    function test_RevokeSettler_ReturnsBond() public {
+        vm.deal(admin, 1 ether);
+        vm.prank(admin);
+        registry.registerSettler{value: 1 ether}(settler1, axlKey1, "x");
+
+        uint256 before = settler1.balance;
+        vm.prank(admin);
+        registry.revokeSettler(settler1);
+
+        assertEq(settler1.balance, before + 1 ether);
+        assertEq(address(registry).balance, 0);
     }
 
     function test_RevokeSettler_RevertsIfNotRegistered() public {
@@ -161,6 +238,16 @@ contract SynodRegistryTest is Test {
         vm.stopPrank();
     }
 
+    function _registerAllBonded() internal {
+        vm.deal(admin, 3 ether);
+        vm.startPrank(admin);
+        registry.configureSecurity(1 days, 1 ether, 0.1 ether);
+        registry.registerSettler{value: 1 ether}(settler1, axlKey1, "claude-sonnet-4-6");
+        registry.registerSettler{value: 1 ether}(settler2, axlKey2, "gemini-2.0-flash");
+        registry.registerSettler{value: 1 ether}(settler3, axlKey3, "llama-3.1-70b");
+        vm.stopPrank();
+    }
+
     function test_RecordSettlement() public {
         _registerAll();
         bytes memory votes = abi.encodePacked("{\"votes\": []}");
@@ -179,7 +266,12 @@ contract SynodRegistryTest is Test {
         assertEq(s.postedBy, settler1);
         assertEq(s.timestamp, block.timestamp);
         assertEq(s.signedVotesPayload, votes);
+        assertEq(s.challengeDeadline, block.timestamp);
+        assertTrue(s.finalized);
+        assertFalse(s.challenged);
+        assertFalse(s.voided);
         assertTrue(registry.isSettled(QID));
+        assertTrue(registry.isFinalized(QID));
     }
 
     function test_RecordSettlement_RevertsIfNotRegisteredSettler() public {
@@ -254,6 +346,137 @@ contract SynodRegistryTest is Test {
         registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
     }
 
+    function test_RecordSettlement_RevertsBelowMinimumBond() public {
+        vm.prank(admin);
+        registry.configureSecurity(1 days, 1 ether, 0.1 ether);
+        _registerAll();
+
+        vm.expectRevert(SynodRegistry.InsufficientBond.selector);
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
+    }
+
+    function test_DepositAndWithdrawBond() public {
+        _registerAll();
+        vm.prank(admin);
+        registry.configureSecurity(0, 1 ether, 0);
+
+        vm.deal(settler1, 2 ether);
+        vm.prank(settler1);
+        registry.depositBond{value: 2 ether}();
+        (,,, uint256 bondAfterDeposit) = registry.settlers(settler1);
+        assertEq(bondAfterDeposit, 2 ether);
+
+        vm.prank(settler1);
+        registry.withdrawBond(1 ether);
+        (,,, uint256 bondAfterWithdraw) = registry.settlers(settler1);
+        assertEq(bondAfterWithdraw, 1 ether);
+
+        vm.expectRevert(SynodRegistry.InsufficientBond.selector);
+        vm.prank(settler1);
+        registry.withdrawBond(1 wei);
+    }
+
+    function test_FinalizeSettlementAfterChallengeWindow() public {
+        _registerAllBonded();
+
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
+        assertTrue(registry.isSettled(QID));
+        assertFalse(registry.isFinalized(QID));
+
+        vm.expectRevert(SynodRegistry.ChallengeWindowOpen.selector);
+        registry.finalizeSettlement(QID);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.expectEmit(true, false, false, false);
+        emit SettlementFinalized(QID);
+        registry.finalizeSettlement(QID);
+        assertTrue(registry.isFinalized(QID));
+    }
+
+    function test_ChallengeSettlement_ResolveSustainedSlashesPosterAndReopens() public {
+        _registerAllBonded();
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
+
+        bytes32 evidence = keccak256("bad-proof-report");
+        vm.deal(stranger, 1 ether);
+        uint256 before = stranger.balance;
+        vm.expectEmit(true, true, false, true);
+        emit SettlementChallenged(QID, stranger, evidence, 0.1 ether, "bad proof");
+        vm.prank(stranger);
+        registry.challengeSettlement{value: 0.1 ether}(QID, evidence, "bad proof");
+
+        vm.expectEmit(true, true, false, true);
+        emit ChallengeResolved(QID, true, stranger, 1.1 ether);
+        vm.prank(admin);
+        registry.resolveChallenge(QID, true, payable(address(0)));
+
+        assertEq(stranger.balance, before + 1 ether);
+        assertFalse(registry.isSettled(QID));
+        assertFalse(registry.isFinalized(QID));
+        assertEq(registry.totalSlashedBond(), 1 ether);
+        (,,, uint256 settler1Bond) = registry.settlers(settler1);
+        assertEq(settler1Bond, 0);
+
+        vm.prank(settler2);
+        registry.recordSettlement(QID, 0, 2, 1_900_000, proof);
+        assertTrue(registry.isSettled(QID));
+    }
+
+    function test_ChallengeSettlement_ResolveRejectedFinalizesAndPaysPoster() public {
+        _registerAllBonded();
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
+
+        vm.deal(stranger, 1 ether);
+        vm.prank(stranger);
+        registry.challengeSettlement{value: 0.1 ether}(QID, keccak256("weak"), "weak");
+
+        uint256 before = settler1.balance;
+        vm.prank(admin);
+        registry.resolveChallenge(QID, false, payable(address(0)));
+
+        assertEq(settler1.balance, before + 0.1 ether);
+        assertTrue(registry.isSettled(QID));
+        assertTrue(registry.isFinalized(QID));
+    }
+
+    function test_ChallengeSettlement_RevertsAfterWindow() public {
+        _registerAllBonded();
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 3, 2_750_000, proof);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        vm.expectRevert(SynodRegistry.ChallengeWindowClosed.selector);
+        registry.challengeSettlement{value: 0.1 ether}(QID, keccak256("late"), "late");
+    }
+
+    function test_ResolveChallenge_BlocksReentrantRepost() public {
+        ReentrantChallenger attacker = new ReentrantChallenger(registry, QID, proof);
+        vm.deal(admin, 3 ether);
+        vm.startPrank(admin);
+        registry.configureSecurity(1 days, 1 ether, 0.1 ether);
+        registry.registerSettler{value: 1 ether}(settler1, axlKey1, "poster");
+        registry.registerSettler{value: 1 ether}(settler2, axlKey2, "backup");
+        registry.registerSettler{value: 1 ether}(address(attacker), axlKey3, "attacker");
+        vm.stopPrank();
+
+        vm.prank(settler1);
+        registry.recordSettlement(QID, 1, 2, 2_000_000, proof);
+
+        vm.deal(address(attacker), 0.1 ether);
+        attacker.challenge{value: 0.1 ether}();
+
+        vm.prank(admin);
+        registry.resolveChallenge(QID, true, payable(address(0)));
+
+        assertTrue(attacker.attempted());
+        assertFalse(attacker.succeeded());
+        assertFalse(registry.isSettled(QID));
+    }
+
     // --- fuzz --------------------------------------------------------------
 
     function testFuzz_RecordSettlement(
@@ -272,5 +495,33 @@ contract SynodRegistryTest is Test {
         assertEq(s.outcome, outcome);
         assertEq(s.quorumSize, quorum);
         assertEq(s.weightedScoreScaled, score);
+    }
+}
+
+contract ReentrantChallenger {
+    SynodRegistry internal immutable registry;
+    bytes32 internal immutable qid;
+    bytes internal proof;
+    bool public attempted;
+    bool public succeeded;
+
+    constructor(SynodRegistry registry_, bytes32 qid_, bytes memory proof_) {
+        registry = registry_;
+        qid = qid_;
+        proof = proof_;
+    }
+
+    function challenge() external payable {
+        registry.challengeSettlement{value: msg.value}(qid, keccak256("reentrant"), "reentrant");
+    }
+
+    receive() external payable {
+        if (attempted) return;
+        attempted = true;
+        try registry.recordSettlement(qid, 0, 2, 1_900_000, proof) {
+            succeeded = true;
+        } catch {
+            succeeded = false;
+        }
     }
 }

@@ -90,6 +90,14 @@ export interface OnchainSettlement {
   signedVotesPayload: Hex;
   postedBy: Hex;
   timestamp: bigint;
+  challengeDeadline?: bigint;
+  finalized?: boolean;
+  challenged?: boolean;
+  voided?: boolean;
+  challenger?: Hex;
+  challengeEvidenceHash?: Hex;
+  challengeReason?: string;
+  challengeBond?: bigint;
 }
 
 export interface OnchainSummary {

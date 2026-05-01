@@ -128,6 +128,7 @@ export async function GET(
         registered: boolean;
         axlPubKey?: string;
         modelTag?: string;
+        bondWei?: string;
         pubkeyMatchesEns?: boolean;
       }
     | null = null;
@@ -140,14 +141,15 @@ export async function GET(
         abi: SYNOD_REGISTRY_ABI,
         functionName: "settlers",
         args: [addr],
-      })) as [boolean, string, string];
-      const [registered, axlPubKey, modelTag] = tuple;
+      })) as readonly [boolean, Hex, string, bigint];
+      const [registered, axlPubKey, modelTag, bond] = tuple;
       const axlClean = axlPubKey?.startsWith("0x") ? axlPubKey.slice(2) : axlPubKey;
       registryRaw = {
         address: cfg.registryAddress,
         registered,
         axlPubKey: axlClean,
         modelTag,
+        bondWei: bond.toString(),
         pubkeyMatchesEns:
           !!pubkey && !!axlClean && pubkey.toLowerCase() === axlClean.toLowerCase(),
       };

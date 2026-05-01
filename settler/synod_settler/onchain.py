@@ -91,8 +91,8 @@ class OnchainClient:
         return self.account.address
 
     def is_registered(self) -> bool:
-        registered, _, _ = self.registry.functions.settlers(self.account.address).call()
-        return bool(registered)
+        row = self.registry.functions.settlers(self.account.address).call()
+        return bool(row[0])
 
     def is_settled(self, question_id_hex: str) -> bool:
         qid = question_id_to_bytes32(question_id_hex)

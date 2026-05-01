@@ -23,16 +23,71 @@ CURL_BIN="$(command -v curl.exe 2>/dev/null || command -v curl 2>/dev/null)" || 
   exit 1
 }
 
-# Load the API key out of settler/.env without sourcing the whole file
-# (the file may contain values with spaces that break shell `source`).
-ANTHROPIC_API_KEY="$(grep -E '^ANTHROPIC_API_KEY=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//')"
-SYNOD_PROVIDER="$(grep -E '^SYNOD_PROVIDER=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//' || echo anthropic)"
-SYNOD_MODEL="$(grep -E '^SYNOD_MODEL=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//' || echo claude-sonnet-4-6)"
+env_file_value() {
+  local key="$1"
+  local value=""
+  if [[ -f "${SETTLER_DIR}/.env" ]]; then
+    value="$(grep -E "^${key}=" "${SETTLER_DIR}/.env" | tail -1 | sed 's/^[^=]*=//' || true)"
+  fi
+  value="${value%$'\r'}"
+  value="${value#\"}"
+  value="${value%\"}"
+  value="${value#\'}"
+  value="${value%\'}"
+  echo "${value}"
+}
 
-if [[ -z "${ANTHROPIC_API_KEY}" ]]; then
-  echo "ERROR: ANTHROPIC_API_KEY not found in ${SETTLER_DIR}/.env" >&2
-  exit 1
-fi
+env_or_file() {
+  local key="$1"
+  local default="${2:-}"
+  local value="${!key:-}"
+  [[ -n "${value}" ]] || value="$(env_file_value "${key}")"
+  [[ -n "${value}" ]] || value="${default}"
+  echo "${value}"
+}
+
+has_secret() {
+  local key="$1"
+  local value="${!key:-}"
+  [[ -n "${value}" ]] || value="$(env_file_value "${key}")"
+  [[ -n "${value}" ]]
+}
+
+default_model_for_provider() {
+  case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+    anthropic) echo "claude-sonnet-4-6" ;;
+    openai) echo "gpt-4o" ;;
+    gemini) echo "gemini-2.0-flash" ;;
+    deterministic) echo "deterministic-v1" ;;
+    *) echo "" ;;
+  esac
+}
+
+require_provider_key() {
+  local provider
+  provider="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  case "${provider}" in
+    anthropic)
+      has_secret ANTHROPIC_API_KEY || { echo "ERROR: ANTHROPIC_API_KEY not found in ${SETTLER_DIR}/.env" >&2; exit 1; }
+      ;;
+    openai)
+      has_secret OPENAI_API_KEY || { echo "ERROR: OPENAI_API_KEY not found in ${SETTLER_DIR}/.env" >&2; exit 1; }
+      ;;
+    gemini)
+      has_secret GOOGLE_API_KEY || { echo "ERROR: GOOGLE_API_KEY not found in ${SETTLER_DIR}/.env" >&2; exit 1; }
+      ;;
+    deterministic)
+      ;;
+    *)
+      echo "ERROR: unknown provider '${provider}'. Expected anthropic, openai, gemini, or deterministic" >&2
+      exit 1
+      ;;
+  esac
+}
+
+SYNOD_PROVIDER="$(env_or_file SYNOD_PROVIDER anthropic)"
+SYNOD_MODEL="$(env_or_file SYNOD_MODEL "$(default_model_for_provider "${SYNOD_PROVIDER}")")"
+require_provider_key "${SYNOD_PROVIDER}"
 
 # Pick AXL binary
 if [[ -f axl/axl-node.exe ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node.exe"
@@ -86,7 +141,7 @@ KEY_B="${ROOT_DIR}/keys/node-b.pem"
 [[ -f "${KEY_A}" ]] || { echo "missing key: ${KEY_A}"; exit 1; }
 [[ -f "${KEY_B}" ]] || { echo "missing key: ${KEY_B}"; exit 1; }
 
-echo "[3/5] starting settler A (Anthropic ${SYNOD_MODEL}, identity node-a)..."
+echo "[3/5] starting settler A (${SYNOD_PROVIDER} ${SYNOD_MODEL}, identity node-a)..."
 (
   cd "${SETTLER_DIR}" || exit 1
   "${PY}" tools/run_settler.py \
@@ -100,7 +155,7 @@ echo "[3/5] starting settler A (Anthropic ${SYNOD_MODEL}, identity node-a)..."
 ) > "${ROOT_DIR}/logs/settler-a.log" 2>&1 &
 PID_SET_A=$!
 
-echo "[3/5] starting settler B (Anthropic ${SYNOD_MODEL}, identity node-b)..."
+echo "[3/5] starting settler B (${SYNOD_PROVIDER} ${SYNOD_MODEL}, identity node-b)..."
 (
   cd "${SETTLER_DIR}" || exit 1
   "${PY}" tools/run_settler.py \

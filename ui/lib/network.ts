@@ -281,7 +281,7 @@ export async function gatherNetworkState(): Promise<NetworkView> {
               abi: SYNOD_REGISTRY_ABI,
               functionName: "settlers",
               args: [node.spec.evmAddress as Hex],
-            })) as [boolean, string, string];
+            })) as [boolean, string, string, bigint];
             const [registered, axlPubKey, modelTag] = tuple;
             node.registered = registered;
             node.registeredAxlPubKey =

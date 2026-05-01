@@ -84,8 +84,10 @@ require_provider_key() {
     gemini)
       has_secret GOOGLE_API_KEY || { echo "GOOGLE_API_KEY missing in settler/.env"; exit 1; }
       ;;
+    deterministic)
+      ;;
     *)
-      echo "unknown provider '${provider}'. Expected anthropic, openai, or gemini"
+      echo "unknown provider '${provider}'. Expected anthropic, openai, gemini, or deterministic"
       exit 1
       ;;
   esac
@@ -235,7 +237,7 @@ DEPLOY_OUT=$(cd "${CONTRACTS_DIR}" && \
     --private-key "${ACC0_KEY}" \
     --broadcast \
     src/SynodRegistry.sol:SynodRegistry \
-    --constructor-args "${ACC0_ADDR}" 2>&1)
+    --constructor-args "${ACC0_ADDR}" 2>&1 | tr -d '\000')
 REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "Deployed to: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $3}')
 [[ -n "${REG_ADDR}" ]] || { echo "deploy failed"; echo "${DEPLOY_OUT}" | tail -20; exit 1; }
 echo "[demo3]   registry: ${REG_ADDR}"
@@ -344,7 +346,9 @@ done
 echo "[demo3] starting Next.js UI on :3000..."
 (
   UI_WIN="$(to_windows_path "${UI_DIR}")"
-  powershell.exe -NoProfile -Command "Set-Location -LiteralPath '${UI_WIN}'; npm.cmd run dev"
+  RUNTIME_WIN="$(to_windows_path "${RUNTIME_CONFIG}")"
+  INJECT_TARGETS="http://127.0.0.1:9002|${PUB_A};http://127.0.0.1:9012|${PUB_B};http://127.0.0.1:9022|${PUB_C}"
+  powershell.exe -NoProfile -Command "Set-Location -LiteralPath '${UI_WIN}'; \$env:SYNOD_UI_DISABLE_ENS='1'; \$env:SYNOD_RPC_URL='${RPC_URL}'; \$env:SYNOD_REGISTRY_ADDRESS='${REG_ADDR}'; \$env:SYNOD_DEMO_RUNTIME_CONFIG='${RUNTIME_WIN}'; \$env:SYNOD_UI_INJECT_TARGETS='${INJECT_TARGETS}'; npm.cmd run dev -- --webpack"
 ) > "${ROOT_DIR}/logs/ui.log" 2>&1 &
 PID_UI=$!
 

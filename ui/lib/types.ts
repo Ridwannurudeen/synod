@@ -69,6 +69,22 @@ export interface OnchainView {
   outcome?: number;
   /** Stored confidence-weighted score scaled by 1e6 on-chain. */
   weightedScoreScaled?: number;
+  /** True when the optimistic challenge window has elapsed or instant finality is configured. */
+  finalized?: boolean;
+  /** Deadline for submitting a challenge, if optimistic finality is enabled. */
+  challengeDeadline?: number;
+  /** True when a challenge has been opened against this settlement. */
+  challenged?: boolean;
+  /** True when a sustained challenge voided this settlement. */
+  voided?: boolean;
+  /** Address that challenged the settlement. */
+  challenger?: string;
+  /** Hash of the external evidence package submitted with the challenge. */
+  challengeEvidenceHash?: string;
+  /** Human-readable challenge reason. */
+  challengeReason?: string;
+  /** Challenge bond held by the registry, in wei. */
+  challengeBond?: string;
   /** Server-side verification of the signed-vote proof stored on-chain. */
   proof?: ProofVerificationView;
 }

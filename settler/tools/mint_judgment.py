@@ -46,10 +46,18 @@ REGISTRY_ABI = [
          {"name": "outcome", "type": "uint8"},
          {"name": "quorumSize", "type": "uint256"},
          {"name": "weightedScoreScaled", "type": "uint256"},
-         {"name": "signedVotesPayload", "type": "bytes"},
-         {"name": "postedBy", "type": "address"},
-         {"name": "timestamp", "type": "uint256"},
-     ], "type": "tuple"}]},
+          {"name": "signedVotesPayload", "type": "bytes"},
+          {"name": "postedBy", "type": "address"},
+          {"name": "timestamp", "type": "uint256"},
+          {"name": "challengeDeadline", "type": "uint256"},
+          {"name": "finalized", "type": "bool"},
+          {"name": "challenged", "type": "bool"},
+          {"name": "voided", "type": "bool"},
+          {"name": "challenger", "type": "address"},
+          {"name": "challengeEvidenceHash", "type": "bytes32"},
+          {"name": "challengeReason", "type": "string"},
+          {"name": "challengeBond", "type": "uint256"},
+      ], "type": "tuple"}]},
     {"name": "registeredSettlerCount", "type": "function", "stateMutability": "view",
      "inputs": [], "outputs": [{"type": "uint256"}]},
 ]
@@ -106,7 +114,8 @@ def main() -> int:
         return 2
 
     s = reg.functions.getSettlement(qid_bytes).call()
-    # Tuple: (questionId, outcome, quorumSize, weightedScoreScaled, signedVotesPayload, postedBy, timestamp)
+    # Tuple prefix: (questionId, outcome, quorumSize, weightedScoreScaled,
+    # signedVotesPayload, postedBy, timestamp, ...)
     outcome = int(s[1])
     quorum_size = int(s[2])
     weighted_score_scaled = int(s[3])
@@ -129,7 +138,8 @@ def main() -> int:
             import urllib.request
             indexer = os.environ.get("SYNOD_0G_INDEXER", "https://indexer-storage-testnet-turbo.0g.ai")
             url = transcript_indexer_url(indexer, transcript_cid)
-            with urllib.request.urlopen(url, timeout=15) as r:  # nosec B310 - validated http(s) URL above.
+            # URL is restricted to credential-free http(s), and transcript root is validated.
+            with urllib.request.urlopen(url, timeout=15) as r:  # nosec B310
                 doc = json.loads(r.read().decode())
                 prompt = doc.get("question", {}).get("prompt", prompt)
         except Exception as e:  # noqa: BLE001

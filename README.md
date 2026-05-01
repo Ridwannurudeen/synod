@@ -22,7 +22,7 @@ When one AI calls the outcome, you trust one company. With Synod, you trust a ne
 | **0G Storage** | Decentralized memory — every full deliberation transcript persisted via 0G Storage CLI; retrievable from anywhere via pure HTTP indexer URL. | `curl https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` |
 | **Gensyn L2 (chain 685689)** | The canonical settlement record. SynodRegistry at [`0xD387f749…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad). | First mainnet settlement: tx `0xc96835…6ab8b82` |
 
-See [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for full per-track writeups, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/ROADMAP.md`](docs/ROADMAP.md) for grant-honest scope + EIP-712 dual-signed quorum next milestone.
+See [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for full per-track writeups, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/grant-security-model.md`](docs/grant-security-model.md) for the grant-honest security model.
 
 ## The problem
 
@@ -87,12 +87,13 @@ The registry anchors the full bundle of signed votes as raw bytes and exposes re
 - ✅ AXL multi-node mesh (local + VPS, encrypted P2P, cross-machine round-trip)
 - ✅ Settler agent (LLM inference + ed25519 vote signing + AXL broadcast + consensus)
 - ✅ On-chain proof anchoring via `recordSettlement` on a real EVM chain (anvil reference; mainnet config one-line switch)
+- ✅ Optimistic finality mode with settler bonds, challenge bonds, challenge window, slashing, voiding, reposting, and `isFinalized`
 - ✅ Question auto-propagation across the settler mesh
 - ✅ Deterministic designated-poster (no double-submission, no coordination required)
 - ✅ Live deliberation viewer (Next.js)
 - ✅ One-command demo orchestrator
 - ✅ Independent CLI proof verifier (`settler/tools/verify_settlement.py`)
-- ✅ **50 tests green** (25 Python protocol/identity/consensus/on-chain/proof-verifier tests + 25 Solidity Foundry incl. 256-run fuzz)
+- ✅ **71 tests green** (34 Python protocol/identity/consensus/on-chain/proof-verifier tests + 37 Solidity Foundry incl. 256-run fuzz)
 
 ## Quick start
 

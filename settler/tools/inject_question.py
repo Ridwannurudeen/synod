@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional 32-byte hex question id; random if not provided",
     )
+    p.add_argument(
+        "--deadline-unix",
+        type=int,
+        default=None,
+        help="Optional absolute UNIX deadline; overrides --deadline-secs",
+    )
     return p.parse_args()
 
 
@@ -67,7 +73,11 @@ def main() -> int:
     args = parse_args()
     outcomes = [int(x) for x in args.outcomes.split(",")]
     qid = args.question_id or secrets.token_hex(32)
-    deadline = int(time.time()) + int(args.deadline_secs)
+    deadline = (
+        int(args.deadline_unix)
+        if args.deadline_unix
+        else int(time.time()) + int(args.deadline_secs)
+    )
 
     q = QuestionAnnouncement.new(
         question_id=qid,

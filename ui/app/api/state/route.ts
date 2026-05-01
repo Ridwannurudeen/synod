@@ -74,6 +74,18 @@ export async function GET(): Promise<NextResponse> {
       onchain.weightedScoreScaled = Number(summary.settlement.weightedScoreScaled);
       onchain.postedBy = summary.settlement.postedBy;
       onchain.postedAt = Number(summary.settlement.timestamp) * 1000;
+      onchain.finalized = Boolean(summary.settlement.finalized);
+      if (summary.settlement.challengeDeadline !== undefined) {
+        onchain.challengeDeadline = Number(summary.settlement.challengeDeadline) * 1000;
+      }
+      onchain.challenged = Boolean(summary.settlement.challenged);
+      onchain.voided = Boolean(summary.settlement.voided);
+      onchain.challenger = summary.settlement.challenger;
+      onchain.challengeEvidenceHash = summary.settlement.challengeEvidenceHash;
+      onchain.challengeReason = summary.settlement.challengeReason;
+      if (summary.settlement.challengeBond !== undefined) {
+        onchain.challengeBond = summary.settlement.challengeBond.toString();
+      }
       onchain.proof = summary.proof;
     }
     if (parsed.onchainTxHash) {

@@ -33,6 +33,68 @@ resolve_tool() {
   return 1
 }
 
+env_file_value() {
+  local key="$1"
+  local value=""
+  if [[ -f "${SETTLER_DIR}/.env" ]]; then
+    value="$(grep -E "^${key}=" "${SETTLER_DIR}/.env" | tail -1 | sed 's/^[^=]*=//' || true)"
+  fi
+  value="${value%$'\r'}"
+  value="${value#\"}"
+  value="${value%\"}"
+  value="${value#\'}"
+  value="${value%\'}"
+  echo "${value}"
+}
+
+env_or_file() {
+  local key="$1"
+  local default="${2:-}"
+  local value="${!key:-}"
+  [[ -n "${value}" ]] || value="$(env_file_value "${key}")"
+  [[ -n "${value}" ]] || value="${default}"
+  echo "${value}"
+}
+
+has_secret() {
+  local key="$1"
+  local value="${!key:-}"
+  [[ -n "${value}" ]] || value="$(env_file_value "${key}")"
+  [[ -n "${value}" ]]
+}
+
+default_model_for_provider() {
+  case "$(echo "$1" | tr '[:upper:]' '[:lower:]')" in
+    anthropic) echo "claude-sonnet-4-6" ;;
+    openai) echo "gpt-4o" ;;
+    gemini) echo "gemini-2.0-flash" ;;
+    deterministic) echo "deterministic-v1" ;;
+    *) echo "" ;;
+  esac
+}
+
+require_provider_key() {
+  local provider
+  provider="$(echo "$1" | tr '[:upper:]' '[:lower:]')"
+  case "${provider}" in
+    anthropic)
+      has_secret ANTHROPIC_API_KEY || { echo "ANTHROPIC_API_KEY not set in settler/.env"; exit 1; }
+      ;;
+    openai)
+      has_secret OPENAI_API_KEY || { echo "OPENAI_API_KEY not set in settler/.env"; exit 1; }
+      ;;
+    gemini)
+      has_secret GOOGLE_API_KEY || { echo "GOOGLE_API_KEY not set in settler/.env"; exit 1; }
+      ;;
+    deterministic)
+      ;;
+    *)
+      echo "unknown provider '${provider}'. Expected anthropic, openai, gemini, or deterministic"
+      exit 1
+      ;;
+  esac
+}
+
 FORGE_BIN="$(resolve_tool forge)" || { echo "forge missing; install Foundry or add it to PATH"; exit 1; }
 CAST_BIN="$(resolve_tool cast)" || { echo "cast missing; install Foundry or add it to PATH"; exit 1; }
 ANVIL_BIN="$(resolve_tool anvil)" || { echo "anvil missing; install Foundry or add it to PATH"; exit 1; }
@@ -53,10 +115,9 @@ ACC1_ADDR="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 ACC2_KEY="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
 ACC2_ADDR="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 
-ANTHROPIC_API_KEY="$(grep -E '^ANTHROPIC_API_KEY=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//')"
-SYNOD_PROVIDER="$(grep -E '^SYNOD_PROVIDER=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//' || echo anthropic)"
-SYNOD_MODEL="$(grep -E '^SYNOD_MODEL=' "${SETTLER_DIR}/.env" | sed 's/^[^=]*=//' || echo claude-sonnet-4-6)"
-[[ -n "${ANTHROPIC_API_KEY}" ]] || { echo "ANTHROPIC_API_KEY not set in settler/.env"; exit 1; }
+SYNOD_PROVIDER="$(env_or_file SYNOD_PROVIDER anthropic)"
+SYNOD_MODEL="$(env_or_file SYNOD_MODEL "$(default_model_for_provider "${SYNOD_PROVIDER}")")"
+require_provider_key "${SYNOD_PROVIDER}"
 
 if [[ -f axl/axl-node.exe ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node.exe"
 elif [[ -f axl/axl-node ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node"
@@ -94,7 +155,7 @@ DEPLOY_OUT=$(cd "${CONTRACTS_DIR}" && \
     --private-key "${ACC0_KEY}" \
     --broadcast \
     src/SynodRegistry.sol:SynodRegistry \
-    --constructor-args "${ACC0_ADDR}" 2>&1)
+    --constructor-args "${ACC0_ADDR}" 2>&1 | tr -d '\000')
 REG_ADDR=$(echo "${DEPLOY_OUT}" | grep -oE "Deployed to: 0x[a-fA-F0-9]{40}" | head -1 | awk '{print $3}')
 if [[ -z "${REG_ADDR}" ]]; then
   echo "ERROR: failed to deploy SynodRegistry" >&2
@@ -132,13 +193,13 @@ PUB_B_ARG="0x${PUB_B}"
 echo "[4/8] registering settlers in SynodRegistry..."
 "${CAST_BIN}" send "${REG_ADDR}" \
   "registerSettler(address,bytes32,string)" \
-  "${ACC1_ADDR}" "${PUB_A_ARG}" "claude-sonnet-4-6-A" \
+  "${ACC1_ADDR}" "${PUB_A_ARG}" "${SYNOD_PROVIDER}-${SYNOD_MODEL}-A" \
   --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1 || \
   { echo "ERROR: registerSettler A failed" >&2; exit 1; }
 
 "${CAST_BIN}" send "${REG_ADDR}" \
   "registerSettler(address,bytes32,string)" \
-  "${ACC2_ADDR}" "${PUB_B_ARG}" "claude-sonnet-4-6-B" \
+  "${ACC2_ADDR}" "${PUB_B_ARG}" "${SYNOD_PROVIDER}-${SYNOD_MODEL}-B" \
   --rpc-url "${RPC_URL}" --private-key "${ACC0_KEY}" >/dev/null 2>&1 || \
   { echo "ERROR: registerSettler B failed" >&2; exit 1; }
 
@@ -235,7 +296,7 @@ fi
 
 # Read the full Settlement struct
 SETTLEMENT=$("${CAST_BIN}" call "${REG_ADDR}" \
-  "getSettlement(bytes32)((bytes32,uint8,uint256,uint256,bytes,address,uint256))" \
+  "getSettlement(bytes32)((bytes32,uint8,uint256,uint256,bytes,address,uint256,uint256,bool,bool,bool,address,bytes32,string,uint256))" \
   "0x${QID_HEX}" --rpc-url "${RPC_URL}")
 echo "Settlement: ${SETTLEMENT}"
 

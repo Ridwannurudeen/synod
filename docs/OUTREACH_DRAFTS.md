@@ -95,7 +95,7 @@ ENSIP draft proposing the agent-identity schema as a standard: github.com/Ridwan
 > 9/ Built solo in 7 days.
 
 Source: github.com/Ridwannurudeen/synod
-Roadmap: docs/ROADMAP.md (next milestone: EIP-712 dual-signed quorum)
+Security model: docs/grant-security-model.md (next milestone: permissionless bonded settlers)
 
 If you're building AI agents on @gensynai, @ensdomains, or @0G_labs — DM me.
 

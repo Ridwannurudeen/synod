@@ -118,7 +118,10 @@ function parseSingleLog(text: string): LogEvents {
     m = line.match(/ONCHAIN q=([0-9a-f]+) tx=([0-9a-f]+) outcome=(-?\d+)/);
     if (m) {
       ev.status = "posted";
-      ev.questionId = m[1];
+      // ONCHAIN log lines intentionally use a shortened question id for display.
+      // Keep the full id parsed from the question/consensus lines so registry
+      // proof lookup still uses the canonical bytes32.
+      if (!ev.questionId) ev.questionId = m[1];
       ev.onchainTxHash = m[2];
       ev.consensusOutcome = Number(m[3]);
       ev.lastUpdateMs = ts;
@@ -172,17 +175,32 @@ export async function parseSettlerLogs(
     });
 
     if (ev.questionId) {
-      // All settlers log the same question/consensus; just take the freshest.
-      const stale = consensus !== null && ev.lastUpdateMs <= (consensus.reachedAt ?? 0);
-      if (!stale) {
+      const hasConsensus =
+        ev.consensusOutcome !== undefined &&
+        ev.consensusQuorum !== undefined &&
+        ev.consensusWeightedScore !== undefined;
+
+      // Keep a question-only placeholder before consensus exists, but do not
+      // let later "voted" updates erase a valid consensus from another settler.
+      if (hasConsensus) {
+        const stale =
+          consensus !== null && ev.lastUpdateMs <= (consensus.reachedAt ?? 0);
+        if (!stale) {
+          consensus = {
+            questionId: ev.questionId,
+            prompt: ev.prompt ?? "",
+            outcomes: ev.outcomes ?? [0, 1],
+            reachedAt: ev.consensusReachedAtMs,
+            outcome: ev.consensusOutcome,
+            weightedScore: ev.consensusWeightedScore,
+            quorumSize: ev.consensusQuorum,
+          };
+        }
+      } else if (consensus === null) {
         consensus = {
           questionId: ev.questionId,
           prompt: ev.prompt ?? "",
           outcomes: ev.outcomes ?? [0, 1],
-          reachedAt: ev.consensusReachedAtMs,
-          outcome: ev.consensusOutcome,
-          weightedScore: ev.consensusWeightedScore,
-          quorumSize: ev.consensusQuorum,
         };
       }
     }
