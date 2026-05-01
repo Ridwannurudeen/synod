@@ -20,6 +20,7 @@ When one AI calls the outcome, you trust one company. With Synod, you trust a ne
 | **ENS subnames** | Each settler is `settler-{a,b,c,d}.synodai.eth` with addr + role + ed25519 pubkey, cross-checked against on-chain registry AND live AXL daemon. | `GET /api/agent/settler-a.synodai.eth` |
 | **ENS judgment subnames** | After every settlement, a `j-{hash}.synodai.eth` is mintable to the question submitter — transferable AI judgment NFT. | See [`docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md`](docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md) |
 | **0G Storage** | Decentralized memory — every full deliberation transcript persisted via 0G Storage CLI; retrievable from anywhere via pure HTTP indexer URL. | `curl https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` |
+| **0G Chain (ERC-7857)** | Each settler minted as an iNFT on 0G Galileo (chain 16602) using 0G Labs' own reference contract. Token IDs 0-3, owner = settler EVM address. | [`0x4fF6712B…2D85`](https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85) |
 | **Gensyn L2 (chain 685689)** | The canonical settlement record. SynodRegistry at [`0xD387f749…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad). | First mainnet settlement: tx `0xc96835…6ab8b82` |
 
 See [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for full per-track writeups, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/grant-security-model.md`](docs/grant-security-model.md) for the grant-honest security model.
