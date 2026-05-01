@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { ProofVerificationView, ProofVoteView } from "@/lib/types";
-import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
+import { DeepFooter, LiveTicker, NavBar, PageHeader } from "@/lib/site-chrome";
 
 type ServerView = ProofVerificationView & {
   registryAddress?: string;
@@ -392,6 +392,7 @@ export default function VerifyPage() {
 
   return (
     <>
+      <LiveTicker />
       <NavBar />
       <main className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-12">
         <PageHeader

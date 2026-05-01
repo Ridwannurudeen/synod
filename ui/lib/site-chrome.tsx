@@ -7,14 +7,77 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+type TickerItem = {
+  questionId: string;
+  prompt: string;
+  outcomeLabel: string;
+  postedAt: number;
+};
+
+/** Thin band at the top of every page showing the most-recent settlement,
+ *  in the spirit of Hyperliquid's price ticker. Pure inline strip — no
+ *  vertical space cost on idle pages. */
+export function LiveTicker() {
+  const [item, setItem] = useState<TickerItem | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/gallery", { cache: "no-store" });
+        if (!r.ok || cancelled) return;
+        const j = (await r.json()) as { items: TickerItem[] };
+        const ready = j.items?.find((x) => x.prompt) ?? null;
+        if (!cancelled) setItem(ready);
+      } catch {
+        /* tolerate */
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  return (
+    <div className="border-b border-ink-800/40 bg-ink-950/60 backdrop-blur-sm">
+      <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-hidden px-6 py-2 text-caption">
+        <span className="pulse-dot shrink-0" aria-hidden />
+        <span className="shrink-0 text-eyebrow uppercase tracking-[0.22em] text-accent-300">
+          last settlement
+        </span>
+        {item ? (
+          <Link
+            href={`/verify?qid=${item.questionId.replace(/^0x/, "")}`}
+            className="group flex min-w-0 items-baseline gap-3 text-ink-300 transition-colors hover:text-ink-100"
+          >
+            <span className="num truncate text-ink-200 group-hover:text-accent-200">
+              "{item.prompt.slice(0, 70)}{item.prompt.length > 70 ? "…" : ""}"
+            </span>
+            <span className="num shrink-0 font-semibold text-accent-400">
+              → {item.outcomeLabel}
+            </span>
+            <span className="hidden shrink-0 text-ink-500 sm:inline">verify proof →</span>
+          </Link>
+        ) : (
+          <span className="text-ink-500">loading from /api/gallery…</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function NavBar() {
   return (
     <nav className="sticky top-0 z-30 border-b border-ink-800/60 bg-ink-950/72 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-6 px-6 py-4">
-        <Link href="/" className="flex items-baseline gap-2 text-h4 font-semibold tracking-tight text-ink-50">
+        <Link href="/" className="flex items-center gap-2.5 text-h4 font-semibold tracking-tight text-ink-50 transition-opacity hover:opacity-80">
+          <BrandMark />
           <span>synod</span>
-          <span className="num text-eyebrow font-normal uppercase tracking-[0.2em] text-ink-500">/0.1</span>
+          <span className="num hidden text-eyebrow font-normal uppercase tracking-[0.2em] text-ink-500 sm:inline">/0.1</span>
         </Link>
         <div className="ml-auto flex items-center gap-1">
           <NavLink href="/gallery" label="Gallery" />
@@ -31,6 +94,19 @@ export function NavBar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+/** Brand mark: stylized "S" — three stacked horizontal bars with a vertical
+ * accent stroke. Distinct geometric mark, no logotype dependency. */
+function BrandMark() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" aria-hidden>
+      <rect x="4" y="5" width="16" height="2" rx="0.5" fill="currentColor" />
+      <rect x="4" y="11" width="12" height="2" rx="0.5" fill="currentColor" />
+      <rect x="4" y="17" width="16" height="2" rx="0.5" fill="currentColor" />
+      <rect x="20" y="5" width="2" height="14" rx="0.5" fill="rgb(0, 229, 160)" />
+    </svg>
   );
 }
 

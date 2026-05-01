@@ -15,7 +15,7 @@ import type {
   InjectQuestionResponse,
   SettlerView,
 } from "@/lib/types";
-import { DeepFooter, NavBar, SectionHeader } from "@/lib/site-chrome";
+import { DeepFooter, LiveTicker, NavBar, SectionHeader } from "@/lib/site-chrome";
 
 const STATUS_TO_LABEL: Record<SettlerView["status"], string> = {
   idle: "idle",
@@ -125,47 +125,80 @@ function useProtocolStats() {
    Looks like a printer receipt of protocol state. Receipts theme.
    ============================================================ */
 function ProtocolReceipt({ stats }: { stats: ProtocolStats | null }) {
-  const dash = "─".repeat(34);
   return (
-    <div className="rounded-md border border-ink-700 bg-ink-900/50 p-6 font-mono text-caption text-ink-200">
-      <div className="text-center text-ink-500">{dash}</div>
-      <div className="mt-1 text-center">
-        <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-300">SYNOD RECEIPT</span>
+    <div className="relative flex flex-col gap-6 rounded-lg border border-ink-800 bg-gradient-to-br from-ink-900/80 via-ink-900/40 to-ink-950/60 p-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="pulse-dot" aria-hidden />
+          <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">live</span>
+        </div>
+        <code className="num text-micro text-ink-500">{stats?.ensParent ?? "synodai.eth"}</code>
       </div>
-      <div className="text-center text-ink-500">{dash}</div>
 
-      <div className="mt-4 flex flex-col gap-1.5">
-        <ReceiptRow label="questions settled" value={stats?.questionsSettled} />
-        <ReceiptRow label="judgments minted" value={stats?.judgmentsMinted} />
-        <ReceiptRow
+      {/* Featured signature stat — the question count, massive, with halo */}
+      <div className="flex flex-col gap-1">
+        <CountUp value={stats?.questionsSettled ?? null} />
+        <span className="text-body-sm text-ink-400">questions settled on Gensyn L2</span>
+      </div>
+
+      <SettlementSparkline />
+
+      <dl className="grid grid-cols-3 gap-x-4 gap-y-2 border-t border-ink-800/60 pt-5 text-caption">
+        <StatTile label="judgments" value={stats?.judgmentsMinted} />
+        <StatTile
           label="0g storage"
-          value={stats ? `${stats.transcriptsKB} kB` : undefined}
+          value={stats !== null && stats.transcriptsKB !== undefined ? `${stats.transcriptsKB} kB` : undefined}
         />
-        <ReceiptRow
+        <StatTile
           label="settlers"
-          value={
-            stats?.registeredSettlerCount !== undefined
-              ? `${stats.registeredSettlerCount} · 2 cities`
-              : undefined
-          }
+          value={stats?.registeredSettlerCount !== undefined ? stats.registeredSettlerCount : undefined}
         />
-      </div>
+      </dl>
+    </div>
+  );
+}
 
-      <div className="mt-4 text-center text-ink-500">{dash}</div>
-      <div className="mt-3 flex flex-col items-center gap-2">
-        <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-500">
-          settlement velocity · 14d
-        </span>
-        <SettlementSparkline />
-      </div>
-      <div className="mt-3 text-center text-ink-500">{dash}</div>
-      <div className="mt-3 flex items-center justify-center gap-2">
-        <span className="pulse-dot" aria-hidden />
-        <span className="text-eyebrow uppercase tracking-[0.22em] text-accent-300">
-          live · {stats?.ensParent ?? "synodai.eth"}
-        </span>
-      </div>
-      <div className="mt-3 text-center text-ink-500">{dash}</div>
+function CountUp({ value }: { value: number | null }) {
+  // Animate the number from previous → current over 800ms.
+  const [display, setDisplay] = useState<number | null>(value);
+  useEffect(() => {
+    if (value === null) return;
+    if (display === null) {
+      // First-render: count up from 0
+      const start = 0;
+      const end = value;
+      const dur = 900;
+      const t0 = performance.now();
+      let raf = 0;
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - t0) / dur);
+        const eased = 1 - Math.pow(1 - t, 3);
+        setDisplay(Math.round(start + (end - start) * eased));
+        if (t < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }
+    if (value !== display) setDisplay(value);
+  }, [value, display]);
+  const text = display === null ? "—" : display.toString();
+  return (
+    <span className="num halo-accent text-[5rem] font-semibold leading-none tracking-tight text-accent-400 sm:text-[6rem] md:text-[5.5rem] lg:text-[7rem]">
+      {text}
+    </span>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: string | number | undefined }) {
+  const isEmpty = value === undefined || value === null;
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">{label}</span>
+      {isEmpty ? (
+        <div aria-hidden className="h-5 w-12 animate-pulse rounded-sm bg-ink-800" />
+      ) : (
+        <span className="num text-h3 font-semibold text-ink-100">{String(value)}</span>
+      )}
     </div>
   );
 }
@@ -268,40 +301,39 @@ function ReceiptRow({ label, value }: { label: string; value: string | number | 
    ============================================================ */
 function Hero({ stats }: { stats: ProtocolStats | null }) {
   return (
-    <section className="grid gap-10 md:grid-cols-[3fr_2fr] md:gap-16 md:items-center">
-      <div className="flex flex-col gap-6">
+    <section className="grid gap-10 md:grid-cols-[7fr_5fr] md:gap-12 md:items-center lg:gap-16">
+      <div className="flex flex-col gap-7">
         <div className="flex items-center gap-3">
           <span className="pulse-dot" aria-hidden />
           <span className="text-eyebrow uppercase tracking-[0.22em] text-ink-400">
-            AI Receipts · Live on Ethereum, Gensyn L2, 0G
+            AI Receipts · Live on Ethereum, Gensyn L2, 0G Storage
           </span>
         </div>
-        <h1 className="text-h1 font-semibold tracking-tight text-ink-50 sm:text-display md:text-display-xl">
+        <h1 className="text-[3rem] font-semibold leading-[0.92] tracking-[-0.045em] text-ink-50 sm:text-[4.5rem] md:text-[5.5rem] lg:text-[7rem]">
           AI verdicts,
-          <br className="hidden sm:block" />
-          {" "}signed &amp; <span className="text-accent-400 halo-accent">addressable</span>.
+          <br />
+          signed &amp; <span className="text-accent-400 halo-accent">addressable</span>.
         </h1>
-        <p className="max-w-xl text-body-lg text-ink-300">
+        <p className="max-w-2xl text-body-lg leading-relaxed text-ink-300 md:text-h4 md:leading-relaxed">
           When N AI models agree on a question, the verdict is signed end-to-end with ed25519,
           posted on Gensyn L2, anchored on 0G Storage, and minted as a transferable ENS subname.
-          Read it, verify it, transfer it.
         </p>
-        <div className="flex flex-wrap gap-3 pt-2">
+        <div className="flex flex-wrap gap-3 pt-3">
           <a
             href="#try"
-            className="rounded-md bg-accent-500 px-5 py-3 text-body-sm font-medium text-ink-950 transition-colors hover:bg-accent-400"
+            className="rounded-md bg-accent-500 px-6 py-3.5 text-body-sm font-medium text-ink-950 transition-colors hover:bg-accent-400"
           >
-            Settle a question
+            Settle a question →
           </a>
           <a
             href="/gallery"
-            className="rounded-md border border-ink-700 bg-ink-900/60 px-5 py-3 text-body-sm text-ink-200 transition-colors hover:border-accent-700 hover:text-accent-300"
+            className="rounded-md border border-ink-700 bg-ink-900/60 px-6 py-3.5 text-body-sm text-ink-200 transition-colors hover:border-accent-700 hover:text-accent-300"
           >
             See settled questions
           </a>
           <a
             href="/verify"
-            className="rounded-md border border-ink-800 px-5 py-3 text-body-sm text-ink-300 transition-colors hover:border-accent-700 hover:text-accent-300"
+            className="rounded-md px-6 py-3.5 text-body-sm text-ink-400 transition-colors hover:text-accent-300"
           >
             Verify any proof →
           </a>
@@ -1101,6 +1133,7 @@ export default function HomePage() {
 
   return (
     <>
+      <LiveTicker />
       <NavBar />
       <main>
         {/* HERO — display-xl claim + receipt-motif live stats. The first impression. */}

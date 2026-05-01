@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { NetworkView, NodeView } from "@/lib/network";
-import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
+import { DeepFooter, LiveTicker, NavBar, PageHeader } from "@/lib/site-chrome";
 
 const POLL_MS = 5_000;
 
@@ -290,6 +290,7 @@ export default function NetworkPage() {
 
   return (
     <>
+      <LiveTicker />
       <NavBar />
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
         <PageHeader

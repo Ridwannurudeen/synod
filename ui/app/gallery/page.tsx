@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import { DeepFooter, NavBar, PageHeader } from "@/lib/site-chrome";
+import { DeepFooter, LiveTicker, NavBar, PageHeader } from "@/lib/site-chrome";
 
 type Item = {
   questionId: string;
@@ -166,6 +166,7 @@ export default function GalleryPage() {
 
   return (
     <>
+      <LiveTicker />
       <NavBar />
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-12">
         <PageHeader
