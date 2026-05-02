@@ -864,6 +864,14 @@ type InftToken = {
   tx: string;
   explorer: string;
 };
+type InftTransfer = {
+  tokenId: number;
+  from: string;
+  to: string;
+  tx: string;
+  explorer: string;
+};
+
 type InftView = {
   contract: string;
   verifier: string;
@@ -873,6 +881,7 @@ type InftView = {
   standard: string;
   scope_note: string;
   tokens: InftToken[];
+  transfers?: InftTransfer[];
 };
 
 function InftFleet() {
@@ -930,30 +939,42 @@ function InftFleet() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-        {view.tokens.map((t) => (
-          <a
-            key={t.tokenId}
-            href={t.explorer}
-            target="_blank"
-            rel="noreferrer"
-            className="group flex flex-col gap-2 rounded-md border border-ink-700 bg-ink-900/40 p-4 transition-colors hover:border-accent-700/50 hover:bg-ink-900/60"
-          >
-            <div className="flex items-baseline justify-between">
-              <span className="num text-h3 font-semibold tracking-tight text-accent-400">
-                #{t.tokenId}
-              </span>
-              <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">
-                {t.name}
-              </span>
-            </div>
-            <code className="num truncate text-caption text-ink-300">{t.fqn}</code>
-            <div className="text-caption text-ink-400">{t.role}</div>
-            <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-ink-800 pt-2 text-caption">
-              <span className="text-ink-500 group-hover:text-accent-300 transition-colors">mint tx</span>
-              <code className="num truncate text-ink-400">{t.tx.slice(0, 10)}…</code>
-            </div>
-          </a>
-        ))}
+        {view.tokens.map((t) => {
+          const xfer = view.transfers?.find((x) => x.tokenId === t.tokenId);
+          return (
+            <a
+              key={t.tokenId}
+              href={xfer?.explorer ?? t.explorer}
+              target="_blank"
+              rel="noreferrer"
+              className="group flex flex-col gap-2 rounded-md border border-ink-700 bg-ink-900/40 p-4 transition-colors hover:border-accent-700/50 hover:bg-ink-900/60"
+            >
+              <div className="flex items-baseline justify-between">
+                <span className="num text-h3 font-semibold tracking-tight text-accent-400">
+                  #{t.tokenId}
+                </span>
+                <span className="text-eyebrow uppercase tracking-[0.18em] text-ink-500">
+                  {t.name}
+                </span>
+              </div>
+              <code className="num truncate text-caption text-ink-300">{t.fqn}</code>
+              <div className="text-caption text-ink-400">{t.role}</div>
+              {xfer && (
+                <div className="rounded border border-warn-500/40 bg-warn-500/8 px-2 py-1 text-micro text-warn-400">
+                  transferred → <code className="num">{xfer.to.slice(0, 8)}…{xfer.to.slice(-4)}</code>
+                </div>
+              )}
+              <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-ink-800 pt-2 text-caption">
+                <span className="text-ink-500 group-hover:text-accent-300 transition-colors">
+                  {xfer ? "transfer tx" : "mint tx"}
+                </span>
+                <code className="num truncate text-ink-400">
+                  {(xfer?.tx ?? t.tx).slice(0, 10)}…
+                </code>
+              </div>
+            </a>
+          );
+        })}
       </div>
 
       <details className="rounded-md border border-ink-800 bg-ink-900/30 p-4 text-caption text-ink-400">
@@ -962,6 +983,75 @@ function InftFleet() {
         </summary>
         <p className="mt-3 leading-relaxed">{view.scope_note}</p>
       </details>
+    </div>
+  );
+}
+
+/* ============================================================
+   INTEGRATE — SDK install + curl + endpoint surface
+   ============================================================ */
+function IntegrateBlock() {
+  const endpoints = [
+    { path: "GET /api/stats", desc: "live protocol counters" },
+    { path: "GET /api/ens", desc: "ENS bootloader resolution" },
+    { path: "GET /api/network", desc: "AXL mesh + on-chain cross-check" },
+    { path: "GET /api/gallery", desc: "all settled questions" },
+    { path: "GET /api/agent/{ens}", desc: "settler profile + agreement stats" },
+    { path: "GET /api/transcript/{qid}", desc: "0G Storage pointer" },
+    { path: "GET /api/judgment/{qid}", desc: "ENS judgment subname" },
+    { path: "POST /api/verify-proof", desc: "recompute settlement proof" },
+    { path: "GET /api/inft", desc: "ERC-7857 mint + transfer record" },
+  ];
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {/* Code blocks */}
+      <div className="flex flex-col gap-4">
+        <div className="rounded-md border border-ink-700 bg-ink-950/60 p-4 font-mono text-caption">
+          <div className="mb-2 text-eyebrow uppercase tracking-[0.2em] text-ink-500">curl</div>
+          <pre className="overflow-x-auto whitespace-pre text-ink-200 leading-relaxed">
+            <span className="text-ink-500"># resolve a settler</span>{"\n"}
+            curl -s https://synod.gudman.xyz/api/agent/<span className="text-accent-300">settler-a.synodai.eth</span>{"\n\n"}
+            <span className="text-ink-500"># verify a proof</span>{"\n"}
+            curl -X POST https://synod.gudman.xyz/api/verify-proof \{"\n"}
+            {"  "}-H 'Content-Type: application/json' \{"\n"}
+            {"  "}-d '{"{"}"questionId":"<span className="text-accent-300">0xcd79b5db…</span>"{"}"}'
+          </pre>
+        </div>
+        <div className="rounded-md border border-ink-700 bg-ink-950/60 p-4 font-mono text-caption">
+          <div className="mb-2 text-eyebrow uppercase tracking-[0.2em] text-ink-500">typescript SDK</div>
+          <pre className="overflow-x-auto whitespace-pre text-ink-200 leading-relaxed">
+            <span className="text-ink-500"># install</span>{"\n"}
+            npm i <span className="text-accent-300">@synod/sdk</span>{"\n\n"}
+            <span className="text-ink-500"># use</span>{"\n"}
+            import {"{ synod }"} from <span className="text-accent-300">"@synod/sdk"</span>;{"\n"}
+            const proof = await synod.verify(qid);{"\n"}
+            const agent = await synod.agent(<span className="text-accent-300">"settler-a.synodai.eth"</span>);
+          </pre>
+        </div>
+        <a
+          href="https://github.com/Ridwannurudeen/synod/blob/main/sdk/README.md"
+          target="_blank"
+          rel="noreferrer"
+          className="self-start rounded-md border border-accent-700/50 bg-accent-700/10 px-4 py-2 text-caption text-accent-300 transition-colors hover:bg-accent-700/20"
+        >
+          SDK docs ↗
+        </a>
+      </div>
+      {/* Endpoint table */}
+      <div className="rounded-md border border-ink-700 bg-ink-900/40 p-4">
+        <div className="mb-3 flex items-baseline justify-between">
+          <span className="text-eyebrow uppercase tracking-[0.2em] text-ink-500">9 public endpoints</span>
+          <span className="text-micro text-ink-500">no auth · no rate limit · CORS open</span>
+        </div>
+        <ul className="flex flex-col divide-y divide-ink-800/60 text-caption">
+          {endpoints.map((e) => (
+            <li key={e.path} className="flex items-baseline justify-between gap-3 py-2">
+              <code className="num truncate text-ink-200">{e.path}</code>
+              <span className="shrink-0 text-ink-500">{e.desc}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -1580,6 +1670,18 @@ export default function HomePage() {
             sub="ERC-7857 (draft) — 0G Labs' own standard for agent NFTs with verifiable transfer of metadata. Reference contract deployed on Galileo, one iNFT per settler, owner = settler's EVM address."
           />
           <InftFleet />
+        </section>
+
+        {/* INTEGRATE — SDK install + curl + REST endpoints */}
+        <section className="border-y border-ink-800/40 bg-ink-900/20">
+          <div className="mx-auto max-w-7xl px-6 py-16">
+            <SectionHeader
+              eyebrow="Integrate"
+              title="Plug Synod into anything that speaks HTTP"
+              sub="No SDK lock-in — every endpoint is plain JSON over HTTPS. The TypeScript SDK is a thin wrapper, not a dependency."
+            />
+            <IntegrateBlock />
+          </div>
         </section>
       </main>
       <DeepFooter />

@@ -9,7 +9,31 @@
 
 When one AI calls the outcome, you trust one company. With Synod, you trust a network — and the network leaves a receipt every time it speaks.
 
-**Live**: [synod.gudman.xyz](https://synod.gudman.xyz) — homepage submits questions, [/network](https://synod.gudman.xyz/network) cross-checks the AXL mesh against on-chain registry against ENS records, [/gallery](https://synod.gudman.xyz/gallery) browses every settled question, [/verify](https://synod.gudman.xyz/verify) re-runs the proof.
+**Live**: [synod.gudman.xyz](https://synod.gudman.xyz). Try in 5 seconds:
+
+```bash
+# Resolve a settler
+curl -s https://synod.gudman.xyz/api/agent/settler-a.synodai.eth | jq
+
+# Verify a real settled proof end-to-end
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"questionId":"0xcd79b5dbfc6365f7f6c21e5b1c7a7b841a502b448fe9689f403d84fbac4447ac"}' \
+  https://synod.gudman.xyz/api/verify-proof | jq '.status, .votes | length'
+
+# Or use the SDK
+npm i @synod/sdk
+```
+
+## What's actually shipped (verifiable on-chain)
+
+| Layer | Where | What |
+|---|---|---|
+| Settlement | Gensyn L2 mainnet | [`SynodRegistry @ 0xD387…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad) — 30+ questions settled, every vote ed25519-signed |
+| Identity | Ethereum mainnet ENS | [`synodai.eth`](https://app.ens.domains/synodai.eth) is load-bearing — registry/RPC/threshold/settler list all in text records. `settler-{a,b,c,d}` subnames cross-checked. |
+| Memory | 0G Storage Galileo | Every transcript persisted; pure HTTP retrieval at `https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` |
+| Receipts | Ethereum mainnet ENS | `j-{hash}.synodai.eth` minted per settlement — transferable AI judgment NFT |
+| Agent NFTs | 0G Galileo | [`AgentNFT @ 0x4fF6712B…2D85`](https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85) — 4 ERC-7857 iNFTs minted (token IDs 0-3), 1 transferred on-chain to prove the spec works |
+| Cross-machine | Frankfurt + Toronto VPS | AXL Yggdrasil mesh, bidirectional public-IP peer, no central coordinator |
 
 ## How each partner's tech is load-bearing
 
@@ -23,7 +47,7 @@ When one AI calls the outcome, you trust one company. With Synod, you trust a ne
 | **0G Chain (ERC-7857)** | Each settler minted as an iNFT on 0G Galileo (chain 16602) using 0G Labs' own reference contract. Token IDs 0-3, owner = settler EVM address. | [`0x4fF6712B…2D85`](https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85) |
 | **Gensyn L2 (chain 685689)** | The canonical settlement record. SynodRegistry at [`0xD387f749…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad). | First mainnet settlement: tx `0xc96835…6ab8b82` |
 
-See [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for full per-track writeups, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/grant-security-model.md`](docs/grant-security-model.md) for the grant-honest security model.
+See [`QUICKSTART.md`](QUICKSTART.md) for `make demo` (local fork-and-run), [`sdk/README.md`](sdk/README.md) for the TypeScript SDK, [`docs/SUBMISSIONS.md`](docs/SUBMISSIONS.md) for the per-track ETHGlobal writeup, [`docs/COMPARISON.md`](docs/COMPARISON.md) for Synod vs Chainlink/UMA/Pyth/Reality.eth/Bittensor, [`docs/DEMO_THEATER.md`](docs/DEMO_THEATER.md) for the demo video script, and [`docs/grant-security-model.md`](docs/grant-security-model.md) for the grant-honest security model.
 
 ## The problem
 
