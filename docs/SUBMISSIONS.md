@@ -100,9 +100,14 @@ The /network page reads everything via `viem` from on-chain ENS records. The set
 ## Track 3 — ENS — Most Creative Use of ENS ($2,500 pool, max $1,250 1st)
 
 ### Project name + short description
-**Synod ships AI Judgment NFTs as ENS subnames.** After a consensus event, the protocol *can* mint `j-{shortHash}.synodai.eth` — a transferable, ENS-addressable NFT carrying the AI verdict in 8 text records (outcome, quorum, weighted-score, transcript-CID, settlement tx, prompt, parent, description). 2 minted live on Ethereum mainnet during the hackathon: `j-35af530.synodai.eth` and `j-4320bed.synodai.eth`.
+**Synod ships AI Judgment NFTs as ENS subnames.** After a consensus event, the protocol mints `j-{shortHash}.synodai.eth` — a transferable, ENS-addressable NFT carrying the AI verdict in 8 text records (outcome, quorum, weighted-score, transcript-CID, settlement tx, prompt, parent, description). The subname is minted **directly to the question submitter's wallet** (verified by SIWE-style signature on the inject form), so the judgment NFT is theirs to keep, transfer, or sell on OpenSea. 3 minted live on Ethereum mainnet during the hackathon. Latest: `j-67b3d12.synodai.eth` is owned by `0x81Ef2F237Cf51aa8c4b1FFd3062046e651be39f0`, a wallet that is **not** the operator — verifiable via `NameWrapper.ownerOf(uint256(namehash))`.
 
-**Honest scope (v1):** the homepage inject form does not capture a submitter wallet, so judgment subnames are minted **to the operator (deployer wallet)** and can be transferred from there. Wallet-connected minting (owner = msg.sender at inject time) is v1.1 — the data model and mint pipeline are in place, only the inject form needs the wagmi/viem connect to flip ownership semantics. The judgment-subname **primitive** is what's novel; the v1 owner being the operator is a UX issue, not an architectural one.
+**Mint flow (3 transactions per judgment):**
+1. `NameWrapper.setSubnodeRecord(parent, label, deployer, resolver, …)` — mint owned by deployer (only owner can call setText)
+2. `PublicResolver.multicall([setAddr(submitter), setText × 7])` — set all 8 text records in one tx
+3. `NameWrapper.safeTransferFrom(deployer, submitter, tokenId, 1, "")` — transfer to verified submitter
+
+The signature scheme: the inject form has the user sign a canonical "Synod judgment owner declaration" message containing their address, the prompt, and an ISO timestamp. The server reconstructs the message, validates the timestamp window (5 minutes), checks the signature with `viem.verifyMessage`, and persists `{ address, signedAt, message, signature }` to `runtime/submitters.json` keyed by questionId. The mint script reads that file and uses the verified address as the subname owner.
 
 ### Why this is novel
 We use ENS subnames as a **portable proof-of-AI-decision primitive**. Every AI consensus event can become a queryable, transferable artifact:

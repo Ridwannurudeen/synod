@@ -75,6 +75,14 @@ WRAP_ABI = [
                 {"name": "fuses", "type": "uint32"},
                 {"name": "expiry", "type": "uint64"}],
      "outputs": [{"type": "bytes32"}]},
+    # NameWrapper is ERC-1155 — each subname is a token, id = uint256(namehash).
+    {"name": "safeTransferFrom", "type": "function", "stateMutability": "nonpayable",
+     "inputs": [{"name": "from", "type": "address"},
+                {"name": "to", "type": "address"},
+                {"name": "id", "type": "uint256"},
+                {"name": "amount", "type": "uint256"},
+                {"name": "data", "type": "bytes"}],
+     "outputs": []},
 ]
 
 
@@ -193,13 +201,17 @@ def mint_judgment(
         logger.info("%s: 0x%s gasUsed=%d block=%d", label_, h.hex(), rcpt.gasUsed, rcpt.blockNumber)
         return "0x" + h.hex()
 
-    # 1. Mint the subname (or skip if already minted by this deployer)
+    # 1. Mint the subname owned by the **deployer** initially (regardless of
+    # the final owner), because only the subname owner can call setText on
+    # the public resolver. We then set all records, then transfer the
+    # subname to the submitter wallet if it isn't already the deployer.
+    # NOTE: this is why owner-routed mints emit 3 transactions instead of 2.
     if already_minted:
         mint_tx = "0x" + ("0" * 64)  # sentinel — see judgments.json for original
     else:
         mint_tx = send(
             wrap.functions.setSubnodeRecord(
-                parent_node, label, owner, RESOLVER,
+                parent_node, label, acct.address, RESOLVER,
                 0, 0, PARENT_EXPIRY,
             ).build_transaction(base_tx(280_000)),
             f"mint {label}",
@@ -234,6 +246,20 @@ def mint_judgment(
         resolver.functions.multicall(calls).build_transaction(base_tx(900_000)),
         f"records {label}",
     )
+
+    # 3. Transfer ownership to the submitter if that's the requested owner.
+    # NameWrapper is an ERC-1155 wrapper around the subname; each subname is
+    # a token with id = uint256(namehash). safeTransferFrom moves it.
+    transfer_tx: str | None = None
+    if owner.lower() != acct.address.lower():
+        token_id = int.from_bytes(sub_node, "big")
+        transfer_tx = send(
+            wrap.functions.safeTransferFrom(
+                acct.address, owner, token_id, 1, b"",
+            ).build_transaction(base_tx(150_000)),
+            f"transfer {label} -> submitter",
+        )
+        logger.info("transferred subname ownership to %s (tx %s)", owner, transfer_tx)
 
     return JudgmentReceipt(
         fqn=fqn,

@@ -39,27 +39,23 @@ REGISTRY_ABI = [
     {"name": "isSettled", "type": "function", "stateMutability": "view",
      "inputs": [{"name": "questionId", "type": "bytes32"}],
      "outputs": [{"type": "bool"}]},
-    {"name": "getSettlement", "type": "function", "stateMutability": "view",
-     "inputs": [{"name": "questionId", "type": "bytes32"}],
-     "outputs": [{"components": [
-         {"name": "questionId", "type": "bytes32"},
-         {"name": "outcome", "type": "uint8"},
-         {"name": "quorumSize", "type": "uint256"},
-         {"name": "weightedScoreScaled", "type": "uint256"},
-          {"name": "signedVotesPayload", "type": "bytes"},
-          {"name": "postedBy", "type": "address"},
-          {"name": "timestamp", "type": "uint256"},
-          {"name": "challengeDeadline", "type": "uint256"},
-          {"name": "finalized", "type": "bool"},
-          {"name": "challenged", "type": "bool"},
-          {"name": "voided", "type": "bool"},
-          {"name": "challenger", "type": "address"},
-          {"name": "challengeEvidenceHash", "type": "bytes32"},
-          {"name": "challengeReason", "type": "string"},
-          {"name": "challengeBond", "type": "uint256"},
-      ], "type": "tuple"}]},
     {"name": "registeredSettlerCount", "type": "function", "stateMutability": "view",
      "inputs": [], "outputs": [{"type": "uint256"}]},
+    # SettlementRecorded(bytes32 indexed questionId, uint8 outcome,
+    #                    uint256 quorumSize, uint256 weightedScoreScaled,
+    #                    address indexed postedBy)
+    # Read via eth_getLogs instead of getSettlement(): web3.py's decoder
+    # mis-parses the deeply-nested Settlement tuple when v2 vote payloads
+    # push the dynamic-bytes section past certain boundaries (works fine in
+    # the TS verifier; works fine via eth_getLogs).
+    {"name": "SettlementRecorded", "type": "event", "anonymous": False,
+     "inputs": [
+         {"name": "questionId", "type": "bytes32", "indexed": True},
+         {"name": "outcome", "type": "uint8", "indexed": False},
+         {"name": "quorumSize", "type": "uint256", "indexed": False},
+         {"name": "weightedScoreScaled", "type": "uint256", "indexed": False},
+         {"name": "postedBy", "type": "address", "indexed": True},
+     ]},
 ]
 
 
@@ -135,13 +131,35 @@ def main() -> int:
         log.error("question %s is not settled on-chain at %s", qid_hex, args.registry)
         return 2
 
-    s = reg.functions.getSettlement(qid_bytes).call()
-    # Tuple prefix: (questionId, outcome, quorumSize, weightedScoreScaled,
-    # signedVotesPayload, postedBy, timestamp, ...)
-    outcome = int(s[1])
-    quorum_size = int(s[2])
-    weighted_score_scaled = int(s[3])
-    posted_by = s[5]
+    # Read SettlementRecorded event for this question — see comment on
+    # REGISTRY_ABI for why we don't call getSettlement directly.
+    settlement_event = reg.events.SettlementRecorded()
+    logs = w3l2.eth.get_logs({
+        "address": Web3.to_checksum_address(args.registry),
+        "fromBlock": 0,
+        "toBlock": "latest",
+        "topics": [
+            settlement_event._get_event_abi(),  # type: ignore[attr-defined]
+        ],
+    }) if False else w3l2.eth.get_logs({
+        # Topic[0] = keccak256 of the event signature
+        # Topic[1] = indexed questionId
+        "address": Web3.to_checksum_address(args.registry),
+        "fromBlock": 0,
+        "toBlock": "latest",
+        "topics": [
+            "0x" + Web3.keccak(text="SettlementRecorded(bytes32,uint8,uint256,uint256,address)").hex(),
+            "0x" + qid,
+        ],
+    })
+    if not logs:
+        log.error("no SettlementRecorded event found for %s", qid_hex)
+        return 2
+    decoded = settlement_event.process_log(logs[-1])
+    outcome = int(decoded["args"]["outcome"])
+    quorum_size = int(decoded["args"]["quorumSize"])
+    weighted_score_scaled = int(decoded["args"]["weightedScoreScaled"])
+    posted_by = decoded["args"]["postedBy"]
     total_settlers = int(reg.functions.registeredSettlerCount().call())
 
     # Read 0G transcript CID
