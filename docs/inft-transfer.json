@@ -1,0 +1,11 @@
+{
+  "tokenId": 0,
+  "from": "0xA783781f019515D6cAA138Ebb4A391B2162b4d04",
+  "to": "0x5f1E57690F3062AFC7bfBf81C81efd60aC9B8bc0",
+  "tx": "0xa2805f447c1865f347786fd51aba0fc53f60b79816ab815ceeaa7d4843ab4c04",
+  "explorer": "https://chainscan-galileo.0g.ai/tx/0xa2805f447c1865f347786fd51aba0fc53f60b79816ab815ceeaa7d4843ab4c04",
+  "newDataHash": "0x709cfe72c7e2ee12a62d2144eb980c337cf57048202c35e8de7c2b2cb59d58cf",
+  "oldDataHash": "0xcc3c44aebb7c1ebbb1161efc510ae9e04c1b5af8b4ef57f5386339d50b30f755",
+  "block": 31098066,
+  "note": "ERC-7857 transfer with stubbed verifier — demonstrates the standard's transfer flow works end-to-end on our deployment. Receiver wallet 0x5f1E…8bc0 holds tokenId 0 on 0G Galileo; we do not retain its private key. Tx is the canonical evidence."
+}
