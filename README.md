@@ -5,9 +5,11 @@
 [![Live demo](https://img.shields.io/badge/live-synod.gudman.xyz-00e5a0)](https://synod.gudman.xyz)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-> **AI Receipts.** Verifiable, transferable, ENS-addressable, 0G-anchored proofs of multi-model AI consensus. ETHGlobal Open Agents (May 2026) — partner submissions to **Gensyn AXL**, **ENS** (Identity + Creative tracks), and **0G** (Track 2 Swarms).
+> **AXL-native signed consensus receipts for AI settlement.** Multi-model AI agents communicate over Gensyn AXL, sign votes with ed25519, anchor settlements on Gensyn L2, and publish ENS-addressable + 0G-stored receipts that anyone can independently verify off-chain. ETHGlobal Open Agents (May 2026) — partner submissions to **Gensyn AXL**, **ENS** (Identity + Creative tracks), and **0G** (Track 2 Swarms).
 
-When one AI calls the outcome, you trust one company. With Synod, you trust a network — and the network leaves a receipt every time it speaks.
+When one AI calls the outcome, you trust one company. With Synod, you trust a network — and the network leaves a cryptographically anchored receipt every time it speaks.
+
+**Scope (v1):** the chain *anchors* the signed-vote bundle and the registered-poster identity. Quorum arithmetic, signature validity, and per-outcome quorum membership are **independently verified off-chain** by the public verifier (TypeScript at `ui/lib/proof-verifier.ts`, Python CLI at `settler/tools/verify_settlement.py`). On-chain enforcement of quorum (EIP-712 + per-block registry snapshots) is a v1.1 design captured in `ROADMAP.md`. See [§ Scope boundary — v1 vs v1.1](#scope-boundary--v1-vs-v11) below.
 
 **Live**: [synod.gudman.xyz](https://synod.gudman.xyz). Try in 5 seconds:
 
@@ -20,15 +22,17 @@ curl -s -X POST -H 'Content-Type: application/json' \
   -d '{"questionId":"0xcd79b5dbfc6365f7f6c21e5b1c7a7b841a502b448fe9689f403d84fbac4447ac"}' \
   https://synod.gudman.xyz/api/verify-proof | jq '.status, .votes | length'
 
-# Or use the SDK
-npm i @synod/sdk
+# Or use the SDK (TypeScript, hits the live API)
+npm i github:Ridwannurudeen/synod#main --save  # SDK is at sdk/ in the repo
 ```
+
+The package is named `@synod/sdk` and lives in `sdk/`. It is intentionally **unpublished on npm during the hackathon** — install directly from the GitHub repo. `cd sdk && npm test` runs 9 smoke tests against the live deployment.
 
 ## What's actually shipped (verifiable on-chain)
 
 | Layer | Where | What |
 |---|---|---|
-| Settlement | Gensyn L2 mainnet | [`SynodRegistry @ 0xD387…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad) — 30+ questions settled, every vote ed25519-signed |
+| Settlement | Gensyn L2 mainnet | [`SynodRegistry @ 0xD387…b6ad`](https://gensyn-mainnet.explorer.alchemy.com/address/0xD387f749667590940d7c68CA350e57FbcE62b6ad) — 50+ `SettlementRecorded` events on chain, payload bytes anchored verbatim, every vote ed25519-signed and independently verifiable off-chain |
 | Identity | Ethereum mainnet ENS | [`synodai.eth`](https://app.ens.domains/synodai.eth) is load-bearing — registry/RPC/threshold/settler list all in text records. `settler-{a,b,c,d}` subnames cross-checked. |
 | Memory | 0G Storage Galileo | Every transcript persisted; pure HTTP retrieval at `https://indexer-storage-testnet-turbo.0g.ai/file?root=0x…` |
 | Receipts | Ethereum mainnet ENS | `j-{hash}.synodai.eth` minted per settlement — transferable AI judgment NFT |
@@ -236,6 +240,23 @@ python tools/verify_settlement.py \
 - [`viem`](https://viem.sh/) for read-only on-chain access from the UI
 - [Foundry](https://getfoundry.sh/) toolchain
 - [Next.js](https://nextjs.org/), Tailwind, React
+
+## Scope boundary — v1 vs v1.1
+
+We chose to ship a tight, honest hackathon v1 instead of an overclaimed "production decentralized oracle" prototype. The pitch reflects exactly what's in the code today.
+
+| Concern | v1 (shipped) | v1.1 (designed, not shipped) |
+|---|---|---|
+| Quorum/arithmetic enforcement | **Off-chain.** `SynodRegistry.recordSettlement` accepts the signed-vote bundle from any registered settler with bond and stores bytes verbatim. The challenge window + slashable bond (`onlySettler`, `minSettlerBond`, `challengeWindowSeconds`) deters fraud economically. | EIP-712 signature aggregation enforced on-chain; per-outcome quorum + winner arithmetic checked in `recordSettlement` |
+| Reasoning text in receipts | Vote outcome + confidence + question domain are signed (ed25519). Reasoning text is recorded but **not part of the signing domain in v1** — see `protocol.py:142`. v2 protocol on `main` includes a `reasoning_hash` field; live demo runs v1. | Reasoning bound by signed `reasoning_hash` (Protocol v2 — code shipped to `main`, deployment v1.1) |
+| Verification durability | Verifier reads **current** registry state (`registeredAxlPubKeys`). A revoked or rotated settler invalidates old receipts. | Block-height-pinned verification using `eth_getLogs(SettlerRegistered)` + receipt's settlement block |
+| Judgment subname ownership | Minted **to the operator (deployer)** because the homepage inject form does not capture a submitter wallet. The "transferable receipt" is operator-mintable; the operator can transfer to any address. | Wallet-connected inject flow → mint owner = `msg.sender` |
+| Provider heterogeneity | Three models: `claude-sonnet-4-6`, `claude-haiku-4-5`, `gemini-2.5-flash`, plus `claude-opus-4-7` cross-machine. **Two providers** (Anthropic + Google). All settlers use the same SYSTEM_PROMPT — heterogeneity is on the *vendor/model axis*, not the *role axis*. | Specialised analyst/skeptic/synthesizer prompts per role |
+| ERC-7857 verifier | Stub `IERC7857DataVerifier` returns `isValid=true`. Mint and transfer flows are real on 0G Galileo (4 tokens minted, 1 transferred). | Real TEE attestation + sealed-key encryption pipeline |
+| Stats source | `/api/stats.questionsSettled` reads the local 0G transcript index, not the chain (no `settledCount()` view in v1 contract). On-chain `eth_getLogs` is the canonical source. | Stats endpoint switches to `eth_getLogs(SettlementRecorded)` |
+| AXL mesh edge claims | `/network` infers full edges from any peer presence; doesn't correlate exact pubkey both ways. Visual aid, not cryptographic proof. | Pairwise pubkey verification across `/topology` |
+
+**Why this matters:** every claim above is in the SUBMISSIONS doc and the README. We'd rather under-claim now than get caught by a sharp judge later. The v1.1 list **is the post-hackathon roadmap** for the Gensyn Foundation grant.
 
 ## Roadmap (post-hackathon, for the Gensyn Foundation grant)
 

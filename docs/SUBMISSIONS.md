@@ -100,12 +100,14 @@ The /network page reads everything via `viem` from on-chain ENS records. The set
 ## Track 3 — ENS — Most Creative Use of ENS ($2,500 pool, max $1,250 1st)
 
 ### Project name + short description
-**Synod ships AI Judgment NFTs as ENS subnames.** After every consensus event, the protocol mints `j-{shortHash}.synodai.eth` to the question's submitter — a transferable, ENS-addressable NFT carrying the AI verdict in text records.
+**Synod ships AI Judgment NFTs as ENS subnames.** After a consensus event, the protocol *can* mint `j-{shortHash}.synodai.eth` — a transferable, ENS-addressable NFT carrying the AI verdict in 8 text records (outcome, quorum, weighted-score, transcript-CID, settlement tx, prompt, parent, description). 2 minted live on Ethereum mainnet during the hackathon: `j-35af530.synodai.eth` and `j-4320bed.synodai.eth`.
+
+**Honest scope (v1):** the homepage inject form does not capture a submitter wallet, so judgment subnames are minted **to the operator (deployer wallet)** and can be transferred from there. Wallet-connected minting (owner = msg.sender at inject time) is v1.1 — the data model and mint pipeline are in place, only the inject form needs the wagmi/viem connect to flip ownership semantics. The judgment-subname **primitive** is what's novel; the v1 owner being the operator is a UX issue, not an architectural one.
 
 ### Why this is novel
-We use ENS subnames as a **portable proof-of-AI-decision primitive**. Every AI consensus event becomes a queryable, transferable artifact:
+We use ENS subnames as a **portable proof-of-AI-decision primitive**. Every AI consensus event can become a queryable, transferable artifact:
 
-- **Addressable**: anyone resolves `j-abc123.synodai.eth` → verdict + transcript pointer
+- **Addressable**: anyone resolves `j-abc123.synodai.eth` → verdict + transcript pointer (verified live for both minted subnames via `viem.getEnsText`)
 - **Transferable**: NameWrapper-wrapped, the owner can transfer or sell on OpenSea
 - **Cryptographically tied** to the on-chain settlement (via `synod.tx`) and the off-chain transcript (via `synod.transcript-cid` pointing to 0G Storage)
 - **Renewable / extensible**: future records (e.g. challenge results, reputation updates) can be appended to the same subname
@@ -132,8 +134,8 @@ This is materially different from the canonical "ENS as username" or "ENS as pro
 ### Discoverability
 Browse all of Synod's judgments by enumerating subnames under `synodai.eth`. ENS becomes the public bulletin board of every AI consensus event the protocol has produced.
 
-### Functional, no hard-coded values
-`/api/judgment/{questionId}` returns the live ENS subname for any settled question. The mint flow uses the deployer wallet to call `NameWrapper.setSubnodeRecord` + `PublicResolver.multicall(setText x N)`. Implementation in `settler/synod_settler/judgment_ens.py` and `settler/tools/mint_judgment.py`.
+### Functional implementation
+`/api/judgment/{questionId}` returns the live ENS subname for any minted-judgment question. The mint flow uses the deployer wallet to call `NameWrapper.setSubnodeRecord` + `PublicResolver.multicall(setText x N)`. Implementation in `settler/synod_settler/judgment_ens.py` and `settler/tools/mint_judgment.py`. The /network page resolves all parent + subname text records live via `viem.getEnsText` against Ethereum mainnet — that page contains zero hardcoded settler addresses.
 
 ### Bonus: ENSIP draft
 We've drafted an informal ENSIP at `docs/ENSIP-DRAFT-AI-AGENT-IDENTITY.md` proposing the parent/subname/judgment-subname schema as a standard for AI agent identity in ENS. This is the primitive other AI projects can adopt. Not just "Synod uses ENS"; we want this to become "AI agents use ENS, here's how."
@@ -169,11 +171,12 @@ curl https://indexer-storage-testnet-turbo.0g.ai/file?root=0x{merkleRoot}
 ```
 
 ### Swarm coordination details
-- 4 specialists: Anthropic Sonnet (analyst), Anthropic Haiku (skeptic), Google Gemini Flash (synthesizer), Anthropic Opus on a separate machine (heavyweight reviewer)
+- 4 settlers across **two providers + four model variants**: Anthropic `claude-sonnet-4-6` (Settler A), Anthropic `claude-haiku-4-5` (Settler B), Google `gemini-2.5-flash` (Settler C), Anthropic `claude-opus-4-7` (Settler D, on a separate VPS in Toronto). All four use the same SYSTEM_PROMPT — heterogeneity is on the **model/vendor axis**, not the role axis. Per-role specialization (analyst / skeptic / synthesizer) is v1.1.
 - Each settler reasons independently, signs its vote with its ed25519 key
-- Per-outcome quorum: the *winning outcome* needs ≥N votes for THAT outcome (not majority among all)
+- Per-outcome quorum: the *winning outcome* needs ≥N votes for THAT outcome (not majority among all). Confirmed in `settler/synod_settler/consensus.py:77-81` and exercised by `tests/test_consensus.py:35-46`
 - Deterministic poster: lowest-hex-pubkey among voters submits on-chain (one tx per question, no double-spending)
 - Full reasoning chain persisted to 0G Storage; recoverable months later via the indexer
+- **Honest scope:** in v1, the on-chain registry contract anchors the signed-vote bundle without verifying signatures or quorum arithmetic on-chain. Verification is independently performed off-chain by `ui/lib/proof-verifier.ts` and `settler/tools/verify_settlement.py`. v1.1 moves this on-chain via EIP-712 + per-block registry snapshots.
 
 ### Why 0G Storage specifically
 - We need **append-only history** of every consensus event with **public retrieval**

@@ -30,7 +30,8 @@ describe("@synod/sdk smoke", { concurrency: false }, () => {
     assert.equal(DEFAULT_BASE_URL, "https://synod.gudman.xyz");
   });
 
-  it("stats() returns expected shape", { skip: await liveOnline() ? false : "live API unreachable" }, async () => {
+  it("stats() returns expected shape", async (t) => {
+    if (!(await liveOnline())) return t.skip("live API unreachable");
     const s = await synod.stats();
     assert.equal(typeof s.questionsSettled, "number");
     assert.equal(typeof s.judgmentsMinted, "number");
