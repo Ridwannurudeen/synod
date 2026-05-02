@@ -197,6 +197,9 @@ class SettlerAgent:
         )
 
         # 3) build, sign, store, broadcast our own vote
+        # Protocol v2: reasoning is bound into the signing domain via
+        # reasoning_hash so a poster cannot tamper with displayed reasoning
+        # while keeping the signature valid.
         vote = SettlementVote.new(
             question=q,
             settler_pubkey=self.identity.public_key_hex,
@@ -204,6 +207,7 @@ class SettlerAgent:
             outcome=result.outcome,
             confidence=result.confidence,
             timestamp=int(time.time()),
+            reasoning=result.reasoning,
         )
         sig = self.identity.sign(vote.signing_payload())
         wire = vote.to_wire(signature_hex=sig.hex(), reasoning=result.reasoning)
@@ -282,7 +286,7 @@ class SettlerAgent:
         if kind != int(MessageKind.VOTE):
             logger.warning("rejecting vote with wrong kind=%s", kind)
             return
-        if protocol_version != 1:
+        if protocol_version not in (1, 2):
             logger.warning("rejecting vote with unsupported protocol_version=%s", protocol_version)
             return
         if deadline != state.question.deadline:
@@ -309,6 +313,27 @@ class SettlerAgent:
                 logger.warning("rejecting equivocation from %s", settler_pubkey[:16])
             return
 
+        # v2+: reasoning text must match the signed reasoning_hash.
+        reasoning_hash = ""
+        if protocol_version >= 2:
+            rh = payload.get("reasoning_hash")
+            reasoning_text = str(payload.get("reasoning", ""))
+            from synod_settler.protocol import reasoning_sha256_hex as _rh
+            expected = _rh(reasoning_text)
+            if not isinstance(rh, str) or len(rh) != 64:
+                logger.warning(
+                    "rejecting v2 vote with missing reasoning_hash from %s",
+                    settler_pubkey[:16],
+                )
+                return
+            if rh != expected:
+                logger.warning(
+                    "rejecting vote with reasoning text not matching signed hash from %s",
+                    settler_pubkey[:16],
+                )
+                return
+            reasoning_hash = rh
+
         # The signed payload is the vote without the signature/reasoning fields.
         vote_for_signing = SettlementVote(
             kind=kind,
@@ -322,6 +347,7 @@ class SettlerAgent:
             outcome=outcome,
             confidence=confidence,
             timestamp=timestamp,
+            reasoning_hash=reasoning_hash,
         )
         if not verify_signature(
             settler_pubkey, vote_for_signing.signing_payload(), signature_hex

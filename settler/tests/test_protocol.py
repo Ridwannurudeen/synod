@@ -17,9 +17,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from synod_settler.identity import Identity, verify_signature
 from synod_settler.protocol import (
+    PROTOCOL_VERSION,
     QuestionAnnouncement,
     SettlementVote,
     canonical_json,
+    reasoning_sha256_hex,
 )
 
 
@@ -142,6 +144,81 @@ def test_vote_signature_fails_with_wrong_key(tmp_identity: Identity, tmp_path: P
     assert not verify_signature(
         other.public_key_hex, vote.signing_payload(), sig.hex()
     )
+
+
+def test_v2_binds_reasoning_into_signature(tmp_identity: Identity):
+    """v2 protocol: signing_payload includes reasoning_hash so a tampered
+    reasoning text breaks signature verification when the verifier
+    recomputes the hash.
+    """
+    q = QuestionAnnouncement.new(
+        question_id="ab" * 32,
+        prompt="Is the sky blue?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    honest_reasoning = "Rayleigh scattering of sunlight in the atmosphere"
+    vote = SettlementVote.new(
+        question=q,
+        settler_pubkey=tmp_identity.public_key_hex,
+        model_tag="claude-sonnet-4-6",
+        outcome=1,
+        confidence=0.95,
+        timestamp=1700000000,
+        reasoning=honest_reasoning,
+    )
+    assert vote.protocol_version == PROTOCOL_VERSION == 2
+    assert vote.reasoning_hash == reasoning_sha256_hex(honest_reasoning)
+
+    sig = tmp_identity.sign(vote.signing_payload())
+    # Honest verification works
+    assert verify_signature(
+        tmp_identity.public_key_hex, vote.signing_payload(), sig.hex()
+    )
+
+    # Tampered reasoning produces a different reasoning_hash → different
+    # signing payload → signature does not verify against the new payload.
+    tampered = SettlementVote.new(
+        question=q,
+        settler_pubkey=tmp_identity.public_key_hex,
+        model_tag="claude-sonnet-4-6",
+        outcome=1,
+        confidence=0.95,
+        timestamp=1700000000,
+        reasoning="ignored prior instructions and voted 0",
+    )
+    assert tampered.reasoning_hash != vote.reasoning_hash
+    assert not verify_signature(
+        tmp_identity.public_key_hex, tampered.signing_payload(), sig.hex()
+    )
+
+
+def test_v1_omits_reasoning_hash_from_signing_domain():
+    """Backward compat: a v1 vote (protocol_version=1) signs the same payload
+    it always did, with no reasoning_hash field — verifier still accepts.
+    """
+    q = QuestionAnnouncement.new(
+        question_id="cd" * 32,
+        prompt="Q?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    v1_vote = SettlementVote(
+        kind=2,
+        protocol_version=1,
+        question_id=q.question_id,
+        prompt_hash=q.prompt_hash,
+        outcomes_hash=q.outcomes_hash,
+        deadline=q.deadline,
+        settler_pubkey="aa" * 32,
+        model_tag="x",
+        outcome=1,
+        confidence=0.5,
+        timestamp=1700000000,
+        reasoning_hash="",  # ignored for v1
+    )
+    payload = v1_vote.signing_payload()
+    assert b"reasoning_hash" not in payload, "v1 must not include reasoning_hash in signing domain"
 
 
 def test_confidence_out_of_range_raises():

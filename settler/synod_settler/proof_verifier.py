@@ -18,6 +18,7 @@ from .identity import verify_signature
 from .protocol import (
     MessageKind,
     PROTOCOL_VERSION,
+    reasoning_sha256_hex,
     QuestionAnnouncement,
     SettlementVote,
     canonical_sha256_hex,
@@ -160,7 +161,7 @@ def verify_proof_payload(
     if not isinstance(parsed, dict):
         errors.append("proof payload must be a JSON object")
         parsed = {}
-    if parsed.get("protocol_version") != PROTOCOL_VERSION:
+    if parsed.get("protocol_version") not in (1, PROTOCOL_VERSION):
         errors.append(f"unsupported protocol_version {parsed.get('protocol_version')}")
 
     question = _parse_question(parsed.get("question"), errors)
@@ -232,7 +233,7 @@ def verify_proof_payload(
         else:
             if kind != int(MessageKind.VOTE):
                 vote_errors.append("vote has wrong kind")
-            if protocol_version != PROTOCOL_VERSION:
+            if protocol_version not in (1, PROTOCOL_VERSION):
                 vote_errors.append("vote has unsupported protocol_version")
             if question_id != settlement.question_id:
                 vote_errors.append("vote question_id does not match settlement")
@@ -250,6 +251,18 @@ def verify_proof_payload(
             if not math.isfinite(confidence) or confidence < 0.0 or confidence > 1.0:
                 vote_errors.append("vote confidence is outside [0, 1]")
 
+            # v2+: reasoning_hash must be present and bind the displayed reasoning
+            reasoning_hash = ""
+            if protocol_version >= 2:
+                rh = raw_vote.get("reasoning_hash")
+                reasoning_text = str(raw_vote.get("reasoning", ""))
+                expected = reasoning_sha256_hex(reasoning_text)
+                if not isinstance(rh, str) or len(rh) != 64:
+                    vote_errors.append("missing or malformed reasoning_hash")
+                elif rh != expected:
+                    vote_errors.append("reasoning text does not match signed reasoning_hash")
+                reasoning_hash = rh if isinstance(rh, str) else ""
+
             if pubkey and _is_signature_hex(signature):
                 vote_for_signing = SettlementVote(
                     kind=kind,
@@ -263,6 +276,7 @@ def verify_proof_payload(
                     outcome=outcome,
                     confidence=confidence,
                     timestamp=timestamp,
+                    reasoning_hash=reasoning_hash,
                 )
                 row.signature_valid = verify_signature(
                     pubkey,

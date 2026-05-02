@@ -19,8 +19,19 @@ from typing import Any
 
 
 CANONICAL_JSON_SEPARATORS = (",", ":")
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2  # bumped from 1: reasoning_hash now in signing domain
 HEX_CHARS = frozenset("0123456789abcdef")
+
+
+def reasoning_sha256_hex(reasoning: str | None) -> str:
+    """SHA-256 of the reasoning text. Empty/None reasoning hashes to the
+    sha256 of an empty string so the signed domain has a fixed shape.
+
+    The hash is over UTF-8 bytes of the reasoning string verbatim — no
+    canonicalization. The settler is responsible for not introducing
+    whitespace drift between sign-time and serialization.
+    """
+    return hashlib.sha256((reasoning or "").encode("utf-8")).hexdigest()
 
 
 class MessageKind(IntEnum):
@@ -139,9 +150,9 @@ class SettlementVote:
 
     `outcome` is the chosen index from `QuestionAnnouncement.outcomes`.
     `confidence` is in [0.0, 1.0]; lower means the model is less certain.
-    `reasoning` is a short audit trail; it is NOT covered by the signature
-    domain in v1 to keep votes terse on the wire — only the structured fields
-    are signed.
+    `reasoning_hash` (v2+) is sha256 of the reasoning text — included in
+    the signing domain so the displayed reasoning is bound to the
+    signature. v1 votes (deprecated) did not bind reasoning.
     """
 
     kind: int
@@ -155,6 +166,7 @@ class SettlementVote:
     outcome: int
     confidence: float
     timestamp: int
+    reasoning_hash: str = ""  # sha256 hex; "" only for legacy v1 votes
 
     @classmethod
     def new(
@@ -165,6 +177,7 @@ class SettlementVote:
         outcome: int,
         confidence: float,
         timestamp: int,
+        reasoning: str | None = None,
     ) -> SettlementVote:
         if not (0.0 <= confidence <= 1.0):
             raise ValueError(f"confidence out of range: {confidence}")
@@ -183,27 +196,33 @@ class SettlementVote:
             outcome=outcome,
             confidence=confidence,
             timestamp=timestamp,
+            reasoning_hash=reasoning_sha256_hex(reasoning),
         )
 
     def signing_payload(self) -> bytes:
-        """Bytes the settler signs. Must be reproducible across settlers."""
-        return canonical_json(
-            {
-                "kind": self.kind,
-                "protocol_version": self.protocol_version,
-                "question_id": self.question_id,
-                "prompt_hash": self.prompt_hash,
-                "outcomes_hash": self.outcomes_hash,
-                "deadline": self.deadline,
-                "settler_pubkey": self.settler_pubkey,
-                "model_tag": self.model_tag,
-                "outcome": self.outcome,
-                # confidence is rounded to 4 decimals so floating-point
-                # representation differences across providers don't break sigs
-                "confidence": round(self.confidence, 4),
-                "timestamp": self.timestamp,
-            }
-        )
+        """Bytes the settler signs. Must be reproducible across settlers.
+
+        v1 omits reasoning_hash entirely. v2+ includes it so reasoning text
+        is cryptographically bound to the vote.
+        """
+        body: dict[str, Any] = {
+            "kind": self.kind,
+            "protocol_version": self.protocol_version,
+            "question_id": self.question_id,
+            "prompt_hash": self.prompt_hash,
+            "outcomes_hash": self.outcomes_hash,
+            "deadline": self.deadline,
+            "settler_pubkey": self.settler_pubkey,
+            "model_tag": self.model_tag,
+            "outcome": self.outcome,
+            # confidence is rounded to 4 decimals so floating-point
+            # representation differences across providers don't break sigs
+            "confidence": round(self.confidence, 4),
+            "timestamp": self.timestamp,
+        }
+        if self.protocol_version >= 2:
+            body["reasoning_hash"] = self.reasoning_hash
+        return canonical_json(body)
 
     def to_wire(self, signature_hex: str, reasoning: str | None) -> dict[str, Any]:
         """Wire-format payload including the signature and optional reasoning."""
@@ -221,6 +240,8 @@ class SettlementVote:
             "timestamp": self.timestamp,
             "signature": signature_hex,
         }
+        if self.protocol_version >= 2:
+            out["reasoning_hash"] = self.reasoning_hash
         if reasoning:
             out["reasoning"] = reasoning
         return out

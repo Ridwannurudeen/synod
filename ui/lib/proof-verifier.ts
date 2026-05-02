@@ -6,7 +6,8 @@ import type { OnchainSettlement } from "./registry";
 import type { ProofVerificationView, ProofVoteView } from "./types";
 
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-const PROTOCOL_VERSION = 1;
+const SUPPORTED_PROTOCOL_VERSIONS = [1, 2];
+const PROTOCOL_VERSION_LATEST = 2;
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -87,6 +88,10 @@ interface ProofVote {
   confidence: number;
   timestamp: number;
   signature: string;
+  // v2+: reasoning is bound into the signature via reasoning_hash.
+  reasoning_hash?: string;
+  // Optional plaintext reasoning carried alongside the signed vote.
+  reasoning?: string;
 }
 
 interface ProofPayload {
@@ -96,22 +101,23 @@ interface ProofPayload {
 }
 
 function signingPayload(vote: ProofVote): Buffer {
-  return Buffer.from(
-    canonicalJson({
-      kind: vote.kind,
-      protocol_version: vote.protocol_version,
-      question_id: vote.question_id,
-      prompt_hash: vote.prompt_hash,
-      outcomes_hash: vote.outcomes_hash,
-      deadline: vote.deadline,
-      settler_pubkey: vote.settler_pubkey.toLowerCase(),
-      model_tag: vote.model_tag,
-      outcome: vote.outcome,
-      confidence: round4(Number(vote.confidence)),
-      timestamp: vote.timestamp,
-    }),
-    "utf8"
-  );
+  const body: Record<string, unknown> = {
+    kind: vote.kind,
+    protocol_version: vote.protocol_version,
+    question_id: vote.question_id,
+    prompt_hash: vote.prompt_hash,
+    outcomes_hash: vote.outcomes_hash,
+    deadline: vote.deadline,
+    settler_pubkey: vote.settler_pubkey.toLowerCase(),
+    model_tag: vote.model_tag,
+    outcome: vote.outcome,
+    confidence: round4(Number(vote.confidence)),
+    timestamp: vote.timestamp,
+  };
+  if (vote.protocol_version >= 2) {
+    body.reasoning_hash = vote.reasoning_hash ?? "";
+  }
+  return Buffer.from(canonicalJson(body), "utf8");
 }
 
 export async function verifySettlementProof(
@@ -130,7 +136,10 @@ export async function verifySettlementProof(
     return { status: "invalid", errors: ["signedVotesPayload is not valid JSON"], votes: [] };
   }
 
-  if (parsed.protocol_version !== PROTOCOL_VERSION) {
+  if (
+    typeof parsed.protocol_version !== "number" ||
+    !SUPPORTED_PROTOCOL_VERSIONS.includes(parsed.protocol_version)
+  ) {
     errors.push(`unsupported protocol_version ${String(parsed.protocol_version)}`);
   }
   if (!parsed.question) errors.push("proof payload is missing question");
@@ -200,7 +209,18 @@ export async function verifySettlementProof(
       if (!row.signatureValid) errors.push(`bad signature for ${pubkey.slice(0, 16)}`);
     }
 
-    if (vote.protocol_version !== PROTOCOL_VERSION) errors.push(`bad vote protocol for ${pubkey.slice(0, 16)}`);
+    if (!SUPPORTED_PROTOCOL_VERSIONS.includes(vote.protocol_version)) {
+      errors.push(`bad vote protocol for ${pubkey.slice(0, 16)}`);
+    }
+    if (vote.protocol_version >= 2) {
+      // v2+: reasoning text must hash to the signed reasoning_hash field.
+      const expected = sha256HexText(vote.reasoning ?? "");
+      if (typeof vote.reasoning_hash !== "string" || vote.reasoning_hash.length !== 64) {
+        errors.push(`missing or malformed reasoning_hash for ${pubkey.slice(0, 16)}`);
+      } else if (vote.reasoning_hash !== expected) {
+        errors.push(`reasoning tampering detected for ${pubkey.slice(0, 16)}`);
+      }
+    }
     if (vote.question_id?.toLowerCase() !== settlementQuestionId) errors.push(`vote question mismatch for ${pubkey.slice(0, 16)}`);
     if (question && vote.deadline !== question.deadline) errors.push(`vote deadline mismatch for ${pubkey.slice(0, 16)}`);
     if (question && vote.prompt_hash !== promptHash) errors.push(`vote prompt hash mismatch for ${pubkey.slice(0, 16)}`);
