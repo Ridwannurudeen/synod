@@ -23,6 +23,23 @@ PROTOCOL_VERSION = 2  # bumped from 1: reasoning_hash now in signing domain
 HEX_CHARS = frozenset("0123456789abcdef")
 
 
+def canonical_confidence(c: float) -> float:
+    """Round + clamp confidence so the emitted canonical JSON byte sequence
+    is identical across Python and TypeScript implementations.
+
+    Python's `json.dumps(1.0)` emits `"1.0"`; JS's `JSON.stringify(1)` emits
+    `"1"`. When a settler returns `confidence == 1.0` (e.g. Gemini at
+    perfect certainty), Python signs over `"confidence":1.0` while a JS
+    verifier reconstructs `"confidence":1` and the ed25519 sig fails.
+
+    Clamp to [0, 0.9999] after 4-decimal rounding so the value is never an
+    exact integer. Loses 0.01% precision at the high end; harmless for
+    consensus arithmetic.
+    """
+    rounded = round(max(0.0, min(float(c), 1.0)), 4)
+    return min(rounded, 0.9999)
+
+
 def reasoning_sha256_hex(reasoning: str | None) -> str:
     """SHA-256 of the reasoning text. Empty/None reasoning hashes to the
     sha256 of an empty string so the signed domain has a fixed shape.
@@ -200,10 +217,17 @@ class SettlementVote:
         )
 
     def signing_payload(self) -> bytes:
-        """Bytes the settler signs. Must be reproducible across settlers.
+        """Bytes the settler signs. Must be reproducible across settlers
+        AND across implementations (Python settler, TS verifier, etc).
 
         v1 omits reasoning_hash entirely. v2+ includes it so reasoning text
         is cryptographically bound to the vote.
+
+        Confidence is normalized via canonical_confidence() to avoid the
+        Python-vs-JS canonical-JSON inconsistency for whole floats:
+        Python's json.dumps(1.0) → "1.0" but JS's JSON.stringify(1) → "1".
+        Settlers that return confidence == 1.0 would otherwise produce
+        signatures that no cross-language verifier could validate.
         """
         body: dict[str, Any] = {
             "kind": self.kind,
@@ -215,9 +239,7 @@ class SettlementVote:
             "settler_pubkey": self.settler_pubkey,
             "model_tag": self.model_tag,
             "outcome": self.outcome,
-            # confidence is rounded to 4 decimals so floating-point
-            # representation differences across providers don't break sigs
-            "confidence": round(self.confidence, 4),
+            "confidence": canonical_confidence(self.confidence),
             "timestamp": self.timestamp,
         }
         if self.protocol_version >= 2:

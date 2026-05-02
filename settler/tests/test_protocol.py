@@ -193,6 +193,42 @@ def test_v2_binds_reasoning_into_signature(tmp_identity: Identity):
     )
 
 
+def test_confidence_clamped_to_avoid_python_js_canonical_drift(tmp_identity: Identity):
+    """Regression: when a settler returns confidence=1.0 (e.g. Gemini at
+    high certainty), Python's json.dumps emits "1.0" while JS's
+    JSON.stringify emits "1". Different bytes -> different sha256 ->
+    ed25519 verification fails cross-language.
+
+    canonical_confidence clamps to <= 0.9999 so the JSON byte sequence is
+    identical in both implementations.
+    """
+    q = QuestionAnnouncement.new(
+        question_id="ff" * 32,
+        prompt="Is one plus one equal to two?",
+        outcomes=[0, 1],
+        deadline=1700001000,
+    )
+    vote = SettlementVote.new(
+        question=q,
+        settler_pubkey=tmp_identity.public_key_hex,
+        model_tag="gemini-2.5-flash",
+        outcome=1,
+        confidence=1.0,  # the bug-trigger value
+        timestamp=1700000000,
+        reasoning="trivial arithmetic",
+    )
+    payload = vote.signing_payload().decode("utf-8")
+    # Must not contain the integer-as-float pattern that JS won't reproduce.
+    assert '"confidence":1.0' not in payload
+    assert '"confidence":1,' not in payload
+    assert '"confidence":0.9999' in payload, f"got {payload}"
+    # Round-trip the signature so we know it actually verifies in Python.
+    sig = tmp_identity.sign(vote.signing_payload())
+    assert verify_signature(
+        tmp_identity.public_key_hex, vote.signing_payload(), sig.hex()
+    )
+
+
 def test_v1_omits_reasoning_hash_from_signing_domain():
     """Backward compat: a v1 vote (protocol_version=1) signs the same payload
     it always did, with no reasoning_hash field — verifier still accepts.

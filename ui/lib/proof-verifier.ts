@@ -50,6 +50,21 @@ function round4(n: number): number {
   return Number(n.toFixed(4));
 }
 
+/**
+ * Mirror of Python's protocol.canonical_confidence().
+ *
+ * Python's `json.dumps(1.0)` emits `"1.0"` while `JSON.stringify(1)` emits
+ * `"1"`. Without normalization, a settler that returns `confidence == 1.0`
+ * (e.g. Gemini at high certainty) signs over a payload no JS verifier can
+ * reconstruct byte-identically. Clamp to [0, 0.9999] after 4-decimal
+ * rounding so the value is never a whole-integer float.
+ */
+function canonicalConfidence(n: number): number {
+  const clamped = Math.max(0, Math.min(1, Number(n)));
+  const rounded = Number(clamped.toFixed(4));
+  return Math.min(rounded, 0.9999);
+}
+
 function verifyEd25519(pubkeyHex: string, payload: Buffer, signatureHex: string): boolean {
   try {
     const pubkey = fromHex(pubkeyHex);
@@ -111,7 +126,7 @@ function signingPayload(vote: ProofVote): Buffer {
     settler_pubkey: vote.settler_pubkey.toLowerCase(),
     model_tag: vote.model_tag,
     outcome: vote.outcome,
-    confidence: round4(Number(vote.confidence)),
+    confidence: canonicalConfidence(Number(vote.confidence)),
     timestamp: vote.timestamp,
   };
   if (vote.protocol_version >= 2) {

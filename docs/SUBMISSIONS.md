@@ -148,7 +148,7 @@ The ENS team's blog post [*ENS as the AI Agent Identity Layer (with ERC-8004)*](
 ## Track 4 — 0G — Best Autonomous Agents, Swarms & iNFT Innovations ($7,500 pool, $1,500 each up to 5)
 
 ### Project name + short description
-**Synod** — A specialist AI swarm (analyst + skeptic + synthesizer) that collaborates over P2P transport, signs settlement votes with ed25519, and persists every full deliberation transcript to 0G Storage as the swarm's shared memory.
+**Synod** — A vendor-diverse AI swarm (4 settlers, 4 model variants across Anthropic + Google) that collaborates over P2P transport, signs settlement votes with ed25519, and persists every full deliberation transcript to 0G Storage as the swarm's shared memory. Each settler uses the same prompt — heterogeneity is on the model/vendor axis, not the role axis (per-role specialisation is v1.1).
 
 ### How 0G is used
 **0G Storage Log** is the swarm's shared memory layer. After every successful on-chain settlement, the designated poster uploads the full deliberation transcript via the `0g-storage-client` Go binary:
