@@ -1,0 +1,50 @@
+{
+  "name": "@synod/sdk",
+  "version": "0.1.0",
+  "description": "Thin TypeScript SDK for Synod — AI Receipts (verify proofs, look up settlers, browse gallery)",
+  "license": "MIT",
+  "author": "@ggudman",
+  "homepage": "https://synod.gudman.xyz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ridwannurudeen/synod.git",
+    "directory": "sdk"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test --import tsx test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "ens",
+    "oracle",
+    "synod",
+    "ai-receipts",
+    "gensyn",
+    "0g"
+  ]
+}
