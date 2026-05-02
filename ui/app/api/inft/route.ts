@@ -25,26 +25,36 @@ function inftPath(): string {
   );
 }
 
-export async function GET(): Promise<NextResponse> {
-  let raw: string;
+function transferPath(): string {
+  return (
+    process.env.SYNOD_INFT_TRANSFER_FILE ??
+    path.resolve(/*turbopackIgnore: true*/ process.cwd(), "..", "docs", "inft-transfer.json")
+  );
+}
+
+function safeReadJson(p: string): unknown | null {
   try {
-    raw = fs.readFileSync(/*turbopackIgnore: true*/ inftPath(), "utf8");
+    return JSON.parse(fs.readFileSync(/*turbopackIgnore: true*/ p, "utf8"));
   } catch {
+    return null;
+  }
+}
+
+export async function GET(): Promise<NextResponse> {
+  const mints = safeReadJson(inftPath());
+  if (!mints) {
     return NextResponse.json(
       { error: "iNFT mint record not yet on this server" },
       { status: 404 }
     );
   }
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    return NextResponse.json(
-      { error: "iNFT mint record is malformed" },
-      { status: 500 }
-    );
-  }
-  return NextResponse.json(data, {
+  // If a transfer record exists, fold it in alongside the mints.
+  const transfer = safeReadJson(transferPath());
+  const out =
+    transfer && typeof mints === "object" && mints !== null
+      ? { ...(mints as object), transfers: [transfer] }
+      : mints;
+  return NextResponse.json(out, {
     headers: { "Cache-Control": "no-store" },
   });
 }

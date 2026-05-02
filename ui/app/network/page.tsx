@@ -62,6 +62,31 @@ function PulseDot({ tone }: { tone: "accent" | "warn" | "alert" }) {
 
 function NodeCard({ node }: { node: NodeView }) {
   const tone = nodeTone(node);
+  const [agreement, setAgreement] = useState<{
+    totalAppearances: number;
+    agreedWithConsensus: number;
+    agreementRate: number | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!node.spec.ensFqn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/agent/${encodeURIComponent(node.spec.ensFqn!)}`, {
+          cache: "no-store",
+        });
+        if (r.ok && !cancelled) {
+          const j = (await r.json()) as { agreement?: typeof agreement };
+          if (j.agreement) setAgreement(j.agreement);
+        }
+      } catch {
+        /* tolerate */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [node.spec.ensFqn]);
   return (
     <div className="rounded-md border border-ink-700 bg-ink-900/60 p-5 transition-colors hover:border-ink-600">
       <div className="flex items-start justify-between gap-3">
@@ -106,6 +131,17 @@ function NodeCard({ node }: { node: NodeView }) {
         <span className={node.pubkeyMatchesRegistry ? "text-accent-400" : "text-alert-400"}>
           {node.pubkeyMatchesRegistry ? "ok" : node.online ? "mismatch" : "—"}
         </span>
+        {agreement && agreement.totalAppearances > 0 && (
+          <>
+            <span className="text-ink-400">agreement</span>
+            <span className="num text-ink-200">
+              {agreement.agreedWithConsensus}/{agreement.totalAppearances}
+              {agreement.agreementRate !== null && (
+                <span className="text-ink-500"> · {Math.round(agreement.agreementRate * 100)}%</span>
+              )}
+            </span>
+          </>
+        )}
       </div>
 
       <div className="mt-5 border-t border-ink-700 pt-4">
