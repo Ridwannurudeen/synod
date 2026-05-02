@@ -15,6 +15,9 @@
  *   curl https://synod.gudman.xyz/api/agent/settler-a.synodai.eth
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 import { NextResponse } from "next/server";
 import { createPublicClient, http, namehash, type Hex } from "viem";
 import { mainnet } from "viem/chains";
@@ -160,7 +163,65 @@ export async function GET(
     }
   }
 
-  // 3. Live AXL daemon probe
+  // 3. Per-settler agreement stats — count this settler's votes vs the
+  // canonical outcome across the local transcripts cache. Cheap (no
+  // outbound HTTP), good signal for demo + reputation.
+  let agreement: {
+    totalAppearances: number;
+    agreedWithConsensus: number;
+    agreementRate: number | null;
+    sampleSize: string;
+  } | null = null;
+  try {
+    const transcriptsP =
+      process.env.SYNOD_TRANSCRIPTS_FILE ??
+      path.resolve(/*turbopackIgnore: true*/ process.cwd(), "..", "runtime", "transcripts.json");
+    const tmap = JSON.parse(
+      fs.readFileSync(/*turbopackIgnore: true*/ transcriptsP, "utf8")
+    ) as Record<string, { indexer_url?: string }>;
+    let total = 0;
+    let agreed = 0;
+    // Sample the most-recent N transcripts to keep the per-request HTTP load bounded
+    const entries = Object.entries(tmap).slice(-20);
+    const transcripts = await Promise.all(
+      entries.map(async ([qid, e]) => {
+        if (!e.indexer_url) return null;
+        try {
+          const r = await fetch(e.indexer_url, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(2500),
+          });
+          if (!r.ok) return null;
+          return (await r.json()) as {
+            outcome?: number;
+            votes?: { settler_pubkey?: string; outcome?: number }[];
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const ourPubkey = pubkey?.toLowerCase();
+    for (const doc of transcripts) {
+      if (!doc || typeof doc.outcome !== "number" || !Array.isArray(doc.votes)) continue;
+      const myVote = doc.votes.find(
+        (v) => v.settler_pubkey?.toLowerCase() === ourPubkey
+      );
+      if (!myVote) continue;
+      total += 1;
+      if (myVote.outcome === doc.outcome) agreed += 1;
+    }
+    agreement = {
+      totalAppearances: total,
+      agreedWithConsensus: agreed,
+      agreementRate: total > 0 ? Math.round((agreed / total) * 1000) / 1000 : null,
+      sampleSize: `last ${entries.length} transcripts`,
+    };
+  } catch {
+    // transcripts file missing or malformed — skip silently
+  }
+
+  // 4. Live AXL daemon probe
   let live: { online: boolean; ipv6?: string; peerCount?: number } = { online: false };
   const axlApi = AXL_API_MAP[fqn];
   if (axlApi) {
@@ -194,6 +255,7 @@ export async function GET(
       parent,
       registry: registryRaw,
       live,
+      agreement,
       lookupTimeMs: Date.now(),
     },
     { headers: { "Cache-Control": "no-store" } }

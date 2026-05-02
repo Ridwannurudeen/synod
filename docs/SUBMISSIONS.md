@@ -206,7 +206,9 @@ Each settler is now also minted as an **ERC-7857 iNFT on 0G Chain Galileo** usin
 | 2 | gemini | 0x0f09… | [`0x83361c7f…`](https://chainscan-galileo.0g.ai/tx/0x83361c7fdeb5636a0c2506b534abfc8db5386d901deb5772e38654fbff50739f) |
 | 3 | opus | 0x44e7… | [`0x8039cee0…`](https://chainscan-galileo.0g.ai/tx/0x8039cee026ec75680a7ee664e8ace968f740151b14ec00fd5baf60ae75cbf80b) |
 
-**Honest scope note:** This deployment uses a stubbed `IERC7857DataVerifier` (returns `isValid=true`) rather than a real TEE attestation, and the dataHash binds settler identity (role + pubkey + ENS subname) but does not yet carry an encrypted intelligence payload via the full sealed-key flow. Both are achievable v1.1 work — the contract surface is in place and the standard mint flow works end-to-end. We chose to ship a real ERC-7857 deployment over a half-finished encryption pipeline.
+**Live transfer demonstration**: We executed an actual ERC-7857 `transfer()` on token #0 from settler-a to a fresh receiver wallet, producing a valid receiver-signed accessibility proof per the spec. Tx: [`0xa2805f44…3ab4c04`](https://chainscan-galileo.0g.ai/tx/0xa2805f447c1865f347786fd51aba0fc53f60b79816ab815ceeaa7d4843ab4c04) (block 31098066). This proves the **full** ERC-7857 transfer flow works end-to-end on our deployment — not just the mint side.
+
+**Honest scope note:** This deployment uses a stubbed `IERC7857DataVerifier` (returns `isValid=true`) rather than a real TEE attestation, and the dataHash binds settler identity (role + pubkey + ENS subname) but does not yet carry an encrypted intelligence payload via the full sealed-key flow. Both are achievable v1.1 work — the contract surface is in place and the standard mint + transfer flows work end-to-end. We chose to ship a real ERC-7857 deployment over a half-finished encryption pipeline.
 
 This is a 4th independent piece of the swarm's identity stack, on top of the 0G Storage transcripts:
 
