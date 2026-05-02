@@ -62,6 +62,38 @@ const DEFAULT_FORM: FormState = {
   deadlineSecs: 180,
 };
 
+// SubmitterDeclaration — exact byte-stable message the wallet signs. The
+// /api/inject route reconstructs this server-side and rejects on mismatch,
+// so any client (this UI, curl, future SDK) must build it identically.
+function buildOwnerDeclaration(args: {
+  address: string;
+  prompt: string;
+  issuedAtIso: string;
+}): string {
+  const promptLine =
+    args.prompt.length > 200 ? args.prompt.slice(0, 200) + "…" : args.prompt;
+  return [
+    "Synod judgment owner declaration",
+    "",
+    `Wallet:   ${args.address}`,
+    `Question: ${promptLine}`,
+    `Issued:   ${args.issuedAtIso}`,
+    "",
+    "I am the human submitter and want the resulting judgment subname",
+    "(j-{shortHash}.synodai.eth) minted to this wallet.",
+  ].join("\n");
+}
+
+interface InjectedEthereum {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+function getEthereum(): InjectedEthereum | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { ethereum?: InjectedEthereum };
+  return w.ethereum ?? null;
+}
+
 const SAMPLE_PROMPTS = [
   "Was the Bitcoin genesis block mined on January 3, 2009?",
   "Will the Bitcoin price exceed $200,000 at any point in 2026?",
@@ -1275,6 +1307,38 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  // Wallet connect — kept null until user opts in. When set, the inject
+  // request includes a SIWE-style signed owner-declaration so the
+  // resulting judgment subname is minted to *this* wallet, not the
+  // operator. Without it, mints go to the deployer (legacy v1 behavior).
+  const [wallet, setWallet] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+
+  const connectWallet = useCallback(async () => {
+    setWalletError(null);
+    const eth = getEthereum();
+    if (!eth) {
+      setWalletError("no injected wallet detected (install MetaMask/Rabby)");
+      return;
+    }
+    setConnecting(true);
+    try {
+      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+      if (!accounts || accounts.length === 0) throw new Error("no account returned");
+      setWallet(accounts[0]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setWalletError(msg);
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
+  const disconnectWallet = useCallback(() => {
+    setWallet(null);
+    setWalletError(null);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -1306,6 +1370,29 @@ export default function HomePage() {
           .split(",")
           .map((s) => Number(s.trim()))
           .filter((n) => Number.isFinite(n));
+
+        // If a wallet is connected, sign an owner-declaration and pass it
+        // through. The server reconstructs the message and verifies via
+        // viem.verifyMessage; the resulting judgment subname will mint to
+        // this wallet instead of the operator. If the user rejects the
+        // signature prompt we abort the inject — they explicitly opted in.
+        let submitter: { address: string; signature: string; message: string } | undefined;
+        if (wallet) {
+          const eth = getEthereum();
+          if (!eth) throw new Error("wallet disappeared between connect and sign");
+          const issuedAtIso = new Date().toISOString();
+          const message = buildOwnerDeclaration({
+            address: wallet,
+            prompt: form.prompt,
+            issuedAtIso,
+          });
+          const signature = (await eth.request({
+            method: "personal_sign",
+            params: [message, wallet],
+          })) as string;
+          submitter = { address: wallet, signature, message };
+        }
+
         const res = await fetch("/api/inject", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1313,6 +1400,7 @@ export default function HomePage() {
             prompt: form.prompt,
             outcomes,
             deadlineSecs: form.deadlineSecs,
+            ...(submitter ? { submitter } : {}),
           }),
         });
         if (!res.ok) {
@@ -1328,7 +1416,7 @@ export default function HomePage() {
         setSubmitting(false);
       }
     },
-    [form, refresh]
+    [form, refresh, wallet]
   );
 
   const settlers = useMemo(() => state?.settlers ?? [], [state]);
@@ -1424,6 +1512,39 @@ export default function HomePage() {
                 >
                   {submitting ? "injecting…" : "Inject question"}
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-dashed border-ink-700 bg-ink-950/40 px-3 py-2 text-caption">
+                {wallet ? (
+                  <>
+                    <span className="text-ink-400">judgment owner →</span>
+                    <code className="num text-accent-300">{shortHex(wallet, 6, 4)}</code>
+                    <span className="text-ink-500">— you'll sign one message; the resulting <code className="num text-ink-300">j-{"{hash}"}.synodai.eth</code> mints to this wallet (transferable, OpenSea-compatible).</span>
+                    <button
+                      type="button"
+                      onClick={disconnectWallet}
+                      className="ml-auto rounded-md border border-ink-700 px-2 py-0.5 text-ink-400 hover:border-alert-700 hover:text-alert-400"
+                    >
+                      disconnect
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-ink-400">
+                      Optional: connect wallet to own the resulting judgment NFT.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={connectWallet}
+                      disabled={connecting}
+                      className="ml-auto rounded-md border border-accent-700 bg-accent-700/10 px-3 py-1 text-accent-300 hover:bg-accent-700/20 disabled:opacity-50"
+                    >
+                      {connecting ? "connecting…" : "connect wallet"}
+                    </button>
+                  </>
+                )}
+                {walletError && (
+                  <span className="basis-full text-alert-400">{walletError}</span>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-ink-800/60 pt-3 text-caption">
                 <span className="text-ink-500">avg settle ~60s · ed25519 signed · auto-anchored to 0G</span>

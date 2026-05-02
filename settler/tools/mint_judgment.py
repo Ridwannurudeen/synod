@@ -85,7 +85,7 @@ def transcript_indexer_url(indexer: str, transcript_cid: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("question_id", help="hex question id, with or without 0x prefix")
-    ap.add_argument("--owner", default=None, help="address to receive subname (default: deployer)")
+    ap.add_argument("--owner", default=None, help="address to receive subname (default: read submitters.json then fall back to deployer)")
     ap.add_argument("--rpc-l2", default="https://gensyn-mainnet.g.alchemy.com/public",
                     help="Gensyn L2 RPC for reading the settlement")
     ap.add_argument("--registry", default="0xD387f749667590940d7c68CA350e57FbcE62b6ad",
@@ -93,6 +93,9 @@ def main() -> int:
     ap.add_argument("--transcripts",
                     default="/opt/synod-app/runtime/transcripts.json",
                     help="path to runtime transcripts.json (0G CIDs)")
+    ap.add_argument("--submitters",
+                    default="/opt/synod-app/runtime/submitters.json",
+                    help="path to runtime submitters.json (verified-signature wallet map)")
     ap.add_argument("--dry-run", action="store_true", help="show what would be minted, no tx")
     args = ap.parse_args()
 
@@ -103,6 +106,25 @@ def main() -> int:
         log.error("question_id must be 32 bytes hex; got %d chars", len(qid))
         return 1
     qid_hex = "0x" + qid
+
+    # Resolve owner: explicit --owner > verified submitter from inject API > deployer.
+    # The /api/inject route writes runtime/submitters.json keyed by questionId
+    # only after viem.verifyMessage succeeds, so any address present there
+    # has already been cryptographically authenticated by the human submitter.
+    submitter_owner: str | None = None
+    if not args.owner and os.path.exists(args.submitters):
+        try:
+            with open(args.submitters) as f:
+                submitters = json.load(f)
+            entry = submitters.get(qid) or submitters.get(qid_hex)
+            if entry and isinstance(entry, dict):
+                addr = entry.get("address")
+                if addr and isinstance(addr, str) and addr.startswith("0x") and len(addr) == 42:
+                    submitter_owner = addr
+                    log.info("submitter found in %s -> owner=%s", args.submitters, addr)
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not read submitters file %s: %s", args.submitters, e)
+    resolved_owner = args.owner or submitter_owner
 
     # Read on-chain settlement
     w3l2 = Web3(Web3.HTTPProvider(args.rpc_l2, request_kwargs={"timeout": 30}))
@@ -173,7 +195,11 @@ def main() -> int:
     log.info("transcript_cid:   %s", transcript_cid or "[none]")
     log.info("settlement_tx:    [from synodai.eth resolver]")
     log.info("posted_by:        %s", posted_by)
-    log.info("owner:            %s", args.owner or "[deployer]")
+    if resolved_owner:
+        src = "explicit --owner" if args.owner else "submitters.json (signature-verified)"
+        log.info("owner:            %s  [from %s]", resolved_owner, src)
+    else:
+        log.info("owner:            [deployer fallback]")
     log.info("description:      %s", description)
     log.info("=" * 60)
 
@@ -202,7 +228,7 @@ def main() -> int:
         settlement_tx=settlement_tx_hash,
         question_prompt=prompt,
         description=description,
-        owner=args.owner,
+        owner=resolved_owner,
     )
 
     save_judgment_index(qid, receipt)
