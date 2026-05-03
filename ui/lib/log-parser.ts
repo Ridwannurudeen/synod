@@ -158,22 +158,35 @@ export async function parseSettlerLogs(
   // VPS where neighbour processes can saturate the load average.
   const TAIL_BYTES = 1 * 1024 * 1024;
 
+  // Plus a small head read for the startup pubkey line. The agent logs
+  // `settler running pubkey=...` once at startup; that's the only place
+  // the settler's own pubkey appears in its own log. After ~30 minutes
+  // of polling traffic (~36KB/min) that line rolls out of any
+  // reasonable tail window, and without it the parser drops the settler
+  // entirely. 16KB of head reliably captures the startup banner.
+  const HEAD_BYTES = 16 * 1024;
+
   for (const { path: p } of logPaths) {
     let text: string;
     try {
       const resolved = path.resolve(/*turbopackIgnore: true*/ p);
       const stat = await fs.stat(resolved);
-      if (stat.size <= TAIL_BYTES) {
+      if (stat.size <= TAIL_BYTES + HEAD_BYTES) {
         text = await fs.readFile(resolved, "utf8");
       } else {
         const fh = await fs.open(resolved, "r");
         try {
-          const buf = Buffer.alloc(TAIL_BYTES);
-          await fh.read(buf, 0, TAIL_BYTES, stat.size - TAIL_BYTES);
-          text = buf.toString("utf8");
-          // Drop the (likely partial) first line to keep the parser deterministic.
-          const firstNewline = text.indexOf("\n");
-          if (firstNewline >= 0) text = text.slice(firstNewline + 1);
+          const headBuf = Buffer.alloc(HEAD_BYTES);
+          await fh.read(headBuf, 0, HEAD_BYTES, 0);
+          const tailBuf = Buffer.alloc(TAIL_BYTES);
+          await fh.read(tailBuf, 0, TAIL_BYTES, stat.size - TAIL_BYTES);
+          // Concatenate head + tail with a synthetic gap. Drop the
+          // (likely partial) first line of the tail to keep the parser
+          // deterministic.
+          let tail = tailBuf.toString("utf8");
+          const firstNewline = tail.indexOf("\n");
+          if (firstNewline >= 0) tail = tail.slice(firstNewline + 1);
+          text = headBuf.toString("utf8") + "\n" + tail;
         } finally {
           await fh.close();
         }
