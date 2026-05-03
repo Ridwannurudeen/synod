@@ -55,7 +55,8 @@ coverage/
 
 # Lockfiles we want to ignore in subdirectories (keep top-level)
 **/package-lock.json.bak
-axl/
+axl/*
+!axl/synod_mcp_sidecar.py
 logs/
 keys/
 settler/.venv/

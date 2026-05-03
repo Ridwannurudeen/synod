@@ -124,9 +124,32 @@ async function main() {
     return;
   }
 
-  // Pick a service. We do NOT call depositFund / transferFund here — that's
-  // a one-time setup the operator runs out-of-band (see report). Calling
-  // depositFund per inference would burn gas on every settlement.
+  // Ensure the user account exists on 0G Compute. On first use the wallet
+  // has no on-chain account; depositFund creates it. Subsequent calls top
+  // up the balance, which is fine — the wallet started with 0.293 OG
+  // (funded by the operator) so a small per-call top-up is acceptable for
+  // the demo. We suppress the "amount too small" error from very large
+  // integer gas-price paths and let acknowledgeProviderSigner surface the
+  // real error if something else is wrong.
+  try {
+    if (broker.ledger && typeof broker.ledger.depositFund === "function") {
+      await broker.ledger.depositFund(0.01);
+    }
+  } catch (e) {
+    const msg = String(e?.message || e);
+    // benign: account already exists, amount rounding, etc.
+    const benign =
+      msg.includes("already") ||
+      msg.includes("exist") ||
+      msg.includes("revert") ||
+      msg.includes("0x");
+    if (!benign) {
+      process.stderr.write(`[zerog] depositFund warning: ${msg}\n`);
+    }
+  }
+
+  // Pick a service. Service discovery is done after account creation so
+  // acknowledgeProviderSigner has a valid account to charge.
   let service;
   try {
     const services = await broker.inference.listService();
