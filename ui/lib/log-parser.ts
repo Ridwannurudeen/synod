@@ -150,13 +150,32 @@ export async function parseSettlerLogs(
   let consensus: ConsensusView | null = null;
   let onchainTxHash: string | undefined;
 
+  // Bound how much of each log file we parse on every poll. Settler logs grow
+  // ~10MB/hour and parsing the full file takes seconds — long enough to make
+  // /api/state hang the homepage's 2s polling and silently OOM the UI.
+  // 256KB of tail covers the last few hundred events comfortably.
+  const TAIL_BYTES = 256 * 1024;
+
   for (const { path: p } of logPaths) {
     let text: string;
     try {
-      text = await fs.readFile(
-        path.resolve(/*turbopackIgnore: true*/ p),
-        "utf8"
-      );
+      const resolved = path.resolve(/*turbopackIgnore: true*/ p);
+      const stat = await fs.stat(resolved);
+      if (stat.size <= TAIL_BYTES) {
+        text = await fs.readFile(resolved, "utf8");
+      } else {
+        const fh = await fs.open(resolved, "r");
+        try {
+          const buf = Buffer.alloc(TAIL_BYTES);
+          await fh.read(buf, 0, TAIL_BYTES, stat.size - TAIL_BYTES);
+          text = buf.toString("utf8");
+          // Drop the (likely partial) first line to keep the parser deterministic.
+          const firstNewline = text.indexOf("\n");
+          if (firstNewline >= 0) text = text.slice(firstNewline + 1);
+        } finally {
+          await fh.close();
+        }
+      }
     } catch {
       continue;
     }
