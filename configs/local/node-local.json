@@ -3,5 +3,9 @@
   "Peers": [],
   "Listen": [],
   "api_port": 9022,
-  "tcp_port": 7000
+  "tcp_port": 7000,
+  "router_addr": "http://127.0.0.1",
+  "router_port": 9023,
+  "a2a_addr": "http://127.0.0.1",
+  "a2a_port": 9024
 }

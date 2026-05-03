@@ -10,9 +10,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { encodeFunctionData, keccak256, toHex, type Hex } from "viem";
 
 import type { ProofVerificationView, ProofVoteView } from "@/lib/types";
 import { DeepFooter, LiveTicker, NavBar, PageHeader } from "@/lib/site-chrome";
+import { SYNOD_REGISTRY_ABI } from "@/lib/registry-abi";
 
 type ServerView = ProofVerificationView & {
   registryAddress?: string;
@@ -23,9 +25,38 @@ type ServerView = ProofVerificationView & {
     weightedScoreScaled: number;
     postedBy: string;
     timestamp: number;
+    challengeDeadline?: number;
+    finalized?: boolean;
+    challenged?: boolean;
+    voided?: boolean;
+  };
+  security?: {
+    minChallengeBond: string | null;
+    challengeWindowSeconds: number | null;
   };
   error?: string;
 };
+
+interface InjectedEthereum {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+function getEthereum(): InjectedEthereum | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { ethereum?: InjectedEthereum };
+  return w.ethereum ?? null;
+}
+
+const ONE_ETH = BigInt("1000000000000000000");
+
+function formatEth(wei: bigint): string {
+  // Render up to 6 decimals; trim trailing zeros for display.
+  const whole = wei / ONE_ETH;
+  const frac = wei % ONE_ETH;
+  if (frac === BigInt(0)) return `${whole.toString()} ETH`;
+  const fracStr = frac.toString().padStart(18, "0").slice(0, 6).replace(/0+$/, "");
+  return fracStr.length > 0 ? `${whole.toString()}.${fracStr} ETH` : `${whole.toString()} ETH`;
+}
 
 type TranscriptInfo = {
   questionId: string;
@@ -338,6 +369,199 @@ function ProvenancePanel({ qidHex }: { qidHex: string }) {
   );
 }
 
+function ChallengeBlock({
+  qid,
+  registryAddress,
+  chainId,
+  minChallengeBondWei,
+  challengeDeadline,
+  challenged,
+  finalized,
+}: {
+  qid: Hex;
+  registryAddress: Hex;
+  chainId: number | undefined;
+  minChallengeBondWei: bigint;
+  challengeDeadline: number;
+  challenged: boolean;
+  finalized: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secondsLeft = Math.max(0, challengeDeadline - now);
+  const windowOpen = secondsLeft > 0 && !challenged && !finalized;
+
+  const reasonOk = reason.trim().length > 0 && reason.length <= 200;
+  const evidenceOk = evidenceUrl.trim().length > 0;
+
+  async function submitChallenge(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const eth = getEthereum();
+      if (!eth) throw new Error("no injected wallet detected (install MetaMask/Rabby)");
+
+      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+      if (!accounts || accounts.length === 0) throw new Error("no account returned by wallet");
+      const from = accounts[0];
+
+      // Make sure the wallet is on the registry's chain so the tx targets the
+      // right network. wallet_switchEthereumChain rejects if user declines.
+      if (chainId !== undefined) {
+        try {
+          await eth.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: `0x${chainId.toString(16)}` }],
+          });
+        } catch (err) {
+          // If the wallet doesn't have the chain configured, fall through —
+          // the send below will surface a clear error.
+          void err;
+        }
+      }
+
+      const evidenceHash = keccak256(toHex(evidenceUrl.trim()));
+      const data = encodeFunctionData({
+        abi: SYNOD_REGISTRY_ABI,
+        functionName: "challengeSettlement",
+        args: [qid, evidenceHash, reason.trim()],
+      });
+
+      const tx = (await eth.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from,
+            to: registryAddress,
+            data,
+            value: `0x${minChallengeBondWei.toString(16)}`,
+          },
+        ],
+      })) as string;
+      setTxHash(tx);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Render context strip even when the window is closed so the user understands why.
+  const statusLine = challenged
+    ? "this settlement has already been challenged"
+    : finalized
+      ? "this settlement is finalized — no challenge possible"
+      : secondsLeft <= 0
+        ? "challenge window closed"
+        : `${Math.floor(secondsLeft / 3600)}h ${Math.floor((secondsLeft % 3600) / 60)}m left`;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-md border border-ink-700 bg-ink-900/50 p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-eyebrow uppercase tracking-wide text-ink-400">
+            optimistic finality
+          </span>
+          <span className="text-body-sm text-ink-300">
+            disagree with this settlement? post a bond and stake an evidence package.
+          </span>
+        </div>
+        <div className="flex flex-col items-end gap-0.5 text-caption">
+          <span className="text-ink-500">
+            min bond <span className="num text-ink-100">{formatEth(minChallengeBondWei)}</span>
+          </span>
+          <span className={windowOpen ? "text-accent-400" : "text-ink-500"}>{statusLine}</span>
+        </div>
+      </div>
+
+      {!open && windowOpen && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="self-start rounded-md border border-alert-600 bg-alert-600/10 px-4 py-2 text-body-sm font-medium text-alert-300 transition-colors hover:bg-alert-600/20"
+        >
+          Challenge this settlement
+        </button>
+      )}
+
+      {open && (
+        <form onSubmit={submitChallenge} className="flex flex-col gap-3 border-t border-ink-800 pt-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-eyebrow uppercase tracking-wide text-ink-400">evidence URL</span>
+            <input
+              type="text"
+              value={evidenceUrl}
+              onChange={(e) => setEvidenceUrl(e.target.value)}
+              placeholder="https://… or ipfs://CID"
+              className="num rounded-md border border-ink-700 bg-ink-950 px-3 py-2 text-body-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
+            />
+            <span className="text-micro text-ink-500">
+              we hash this URL with keccak256 and commit the hash on-chain. host the
+              full evidence package elsewhere (0G, IPFS, or a public gist).
+            </span>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-eyebrow uppercase tracking-wide text-ink-400">
+              reason <span className="text-ink-500">({reason.length}/200)</span>
+            </span>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value.slice(0, 200))}
+              rows={3}
+              placeholder="short human-readable explanation; full proof goes in the evidence URL"
+              className="rounded-md border border-ink-700 bg-ink-950 px-3 py-2 text-body-sm text-ink-100 outline-none placeholder:text-ink-500 focus:border-accent-500"
+            />
+          </label>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting || !reasonOk || !evidenceOk}
+              className="rounded-md bg-alert-500 px-4 py-2 text-body-sm font-medium text-ink-950 transition-colors hover:bg-alert-400 disabled:cursor-not-allowed disabled:bg-ink-700 disabled:text-ink-400"
+            >
+              {submitting ? "signing…" : `sign + post ${formatEth(minChallengeBondWei)} bond`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+              className="text-caption text-ink-400 hover:text-ink-200"
+            >
+              cancel
+            </button>
+          </div>
+
+          {error && (
+            <div className="rounded-md border border-alert-600 bg-alert-600/10 px-3 py-2 text-caption text-alert-400">
+              {error}
+            </div>
+          )}
+          {txHash && (
+            <div className="rounded-md border border-accent-700 bg-accent-700/10 px-3 py-2 text-caption">
+              <span className="text-accent-300">challenge submitted — </span>
+              <code className="num text-accent-200">{txHash.slice(0, 10)}…{txHash.slice(-8)}</code>
+            </div>
+          )}
+        </form>
+      )}
+    </section>
+  );
+}
+
 export default function VerifyPage() {
   const [questionId, setQuestionId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -471,6 +695,23 @@ export default function VerifyPage() {
           </div>
 
           {view.questionId && <ProvenancePanel qidHex={view.questionId} />}
+
+          {view.questionId &&
+            view.registryAddress &&
+            view.onchain?.challengeDeadline !== undefined &&
+            view.security?.minChallengeBond &&
+            view.security.challengeWindowSeconds !== null &&
+            view.security.challengeWindowSeconds > 0 && (
+              <ChallengeBlock
+                qid={view.questionId as Hex}
+                registryAddress={view.registryAddress as Hex}
+                chainId={view.chainId}
+                minChallengeBondWei={BigInt(view.security.minChallengeBond)}
+                challengeDeadline={view.onchain.challengeDeadline}
+                challenged={view.onchain.challenged ?? false}
+                finalized={view.onchain.finalized ?? false}
+              />
+            )}
 
           {view.votes.length > 0 && (
             <section>

@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -24,12 +26,19 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class InferenceResult:
-    """The structured answer produced by an LLM provider for one question."""
+    """The structured answer produced by an LLM provider for one question.
+
+    `extras` is an optional, provider-specific metadata bag — used (for now)
+    by ZerogProvider to surface the per-call 0G Compute attestation chat_id
+    and TEE verification flag without bloating the protocol-signed payload.
+    Callers that don't care about provenance can ignore it.
+    """
 
     outcome: int
     confidence: float
     reasoning: str
     model_tag: str
+    extras: dict[str, Any] | None = None
 
 
 SYSTEM_PROMPT = """You are an oracle for an AI-settled prediction market.
@@ -213,6 +222,150 @@ class GeminiProvider(LLMProvider):
         )
 
 
+class ZerogProvider(LLMProvider):
+    """0G Compute Network provider via the TypeScript serving-broker SDK.
+
+    The 0G Compute SDK is TypeScript-only (no Python bindings), so this
+    provider shells out to a Node script — same pattern Synod already uses
+    for 0G Storage uploads (see synod_settler/storage_0g.py). The script
+    handles broker init, provider discovery, TEE-signer acknowledgment,
+    request-header signing, the OpenAI-compatible chat call, and TEE
+    response verification, then prints a single-line JSON result.
+
+    Authentication: the wallet private key is read by the Node child
+    process from the ZEROG_PRIVATE_KEY env var. This Python class never
+    touches the key. Callers should populate that env from a secret store
+    on disk (production VPS layout: /opt/synod-app/runtime/.0g-key.json).
+
+    Per-call cost on Galileo testnet is ~0.004 OG; the wallet is funded
+    once via 0g-compute-cli, not from this provider. The first inference
+    against a given provider acknowledges its TEE signer (one-time gas
+    cost handled inside the Node script).
+
+    Attestation: when 0G returns a `ZG-Res-Key` header, we verify it with
+    broker.inference.processResponse(); the chat_id and verification flag
+    are surfaced via InferenceResult.extras for downstream transcript /
+    on-chain provenance, never folded into the protocol-signed payload.
+    """
+
+    DEFAULT_MODEL = "GLM"  # match hint passed to listService.filter()
+    DEFAULT_TIMEOUT_S = 60
+
+    def __init__(self, *, model: str | None = None, api_key: str | None = None) -> None:
+        # api_key kept in signature for parity with sibling providers; 0G
+        # auth is wallet-based and lives in ZEROG_PRIVATE_KEY in the child
+        # process env, not here.
+        del api_key
+        if not os.environ.get("ZEROG_PRIVATE_KEY", "").strip():
+            raise RuntimeError("ZEROG_PRIVATE_KEY is not set")
+        self._model_hint = model or self.DEFAULT_MODEL
+        # model_tag is finalized after the first inference (we learn the
+        # exact provider-served model name from the broker response). Until
+        # then, expose the hint so logs are sensible.
+        self.model_tag = f"zerog/{self._model_hint}"
+        self._script_path = self._resolve_script_path()
+        self._node_bin = os.environ.get("SYNOD_NODE_BIN", "node")
+        self._timeout_s = int(
+            os.environ.get("ZEROG_TIMEOUT_S", str(self.DEFAULT_TIMEOUT_S))
+        )
+
+    @staticmethod
+    def _resolve_script_path() -> Path:
+        """Locate scripts/zerog_infer.mjs.
+
+        Override with ZEROG_INFER_SCRIPT for non-standard layouts (Docker,
+        VPS deploys, integration tests). Default resolution: walk up from
+        this module until a `scripts/zerog_infer.mjs` is found.
+        """
+        override = os.environ.get("ZEROG_INFER_SCRIPT", "").strip()
+        if override:
+            p = Path(override)
+            if not p.is_file():
+                raise RuntimeError(f"ZEROG_INFER_SCRIPT does not exist: {p}")
+            return p
+
+        here = Path(__file__).resolve().parent
+        # synod_settler/ -> settler/ -> settler/scripts/zerog_infer.mjs
+        candidate = here.parent / "scripts" / "zerog_infer.mjs"
+        if candidate.is_file():
+            return candidate
+        raise RuntimeError(
+            f"zerog_infer.mjs not found at {candidate}; "
+            "set ZEROG_INFER_SCRIPT to override"
+        )
+
+    def infer(self, prompt: str, outcomes: list[int]) -> InferenceResult:
+        user = _build_user_prompt(prompt, outcomes)
+        payload = {
+            "system": SYSTEM_PROMPT,
+            "user": user,
+            "model": self._model_hint,
+            "max_tokens": 512,
+            "temperature": 0,
+        }
+
+        try:
+            proc = subprocess.run(
+                [self._node_bin, str(self._script_path)],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                timeout=self._timeout_s,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RuntimeError(
+                f"zerog_infer.mjs timed out after {self._timeout_s}s"
+            ) from e
+        except FileNotFoundError as e:
+            raise RuntimeError(
+                f"node binary not found at {self._node_bin!r} "
+                "(set SYNOD_NODE_BIN)"
+            ) from e
+
+        stdout = (proc.stdout or "").strip()
+        if not stdout:
+            tail = (proc.stderr or "")[-400:]
+            raise RuntimeError(
+                f"zerog_infer.mjs produced no stdout (rc={proc.returncode}). "
+                f"stderr tail: {tail}"
+            )
+
+        try:
+            result = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"zerog_infer.mjs stdout was not JSON: {e}\n"
+                f"stdout: {stdout[:400]!r}"
+            ) from e
+
+        if proc.returncode != 0 or "error" in result:
+            err = result.get("error") or f"rc={proc.returncode}"
+            raise RuntimeError(f"0G Compute inference failed: {err}")
+
+        text = result.get("text") or ""
+        outcome, confidence, reasoning = _parse_inference_json(text, outcomes)
+
+        # Promote the actual served model name to the tag so the on-chain
+        # vote carries (e.g.) "zerog/GLM-5-FP8" not "zerog/GLM".
+        served_model = result.get("model")
+        if served_model:
+            self.model_tag = f"zerog/{served_model}"
+
+        extras: dict[str, Any] = {}
+        for key in ("chat_id", "attestation_verified", "provider", "attestation_error"):
+            if key in result and result[key] not in (None, ""):
+                extras[key] = result[key]
+
+        return InferenceResult(
+            outcome=outcome,
+            confidence=confidence,
+            reasoning=reasoning,
+            model_tag=self.model_tag,
+            extras=extras or None,
+        )
+
+
 class DeterministicProvider(LLMProvider):
     """Test-only provider: returns canned (outcome, confidence, reasoning).
 
@@ -278,6 +431,8 @@ def build_provider(provider_name: str, *, model: str | None = None) -> LLMProvid
         return OpenAIProvider(model=model)
     if name == "gemini":
         return GeminiProvider(model=model)
+    if name == "zerog":
+        return ZerogProvider(model=model)
     if name == "deterministic":
         return DeterministicProvider(model=model)
     raise ValueError(f"unknown SYNOD_PROVIDER: {provider_name}")

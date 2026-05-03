@@ -112,6 +112,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     signedVotesPayload: Hex;
     postedBy: Hex;
     timestamp: bigint;
+    challengeDeadline: bigint;
+    finalized: boolean;
+    challenged: boolean;
+    voided: boolean;
   };
   try {
     const tuple = (await withRetry(() => client.readContract({
@@ -127,6 +131,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       signedVotesPayload: Hex;
       postedBy: Hex;
       timestamp: bigint;
+      challengeDeadline: bigint;
+      finalized: boolean;
+      challenged: boolean;
+      voided: boolean;
     };
     settlement = tuple;
   } catch (e) {
@@ -137,6 +145,28 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   const result = await verifySettlementProof(client, cfg.registryAddress, settlement);
+
+  // Fetch security config so the UI can render the "Challenge" CTA with the
+  // live minChallengeBond and a correct challenge-window countdown. These
+  // reads are best-effort: missing values just disable the CTA.
+  let minChallengeBond: bigint | undefined;
+  let challengeWindowSeconds: bigint | undefined;
+  try {
+    [minChallengeBond, challengeWindowSeconds] = (await Promise.all([
+      withRetry(() => client.readContract({
+        address: cfg.registryAddress,
+        abi: SYNOD_REGISTRY_ABI,
+        functionName: "minChallengeBond",
+      })),
+      withRetry(() => client.readContract({
+        address: cfg.registryAddress,
+        abi: SYNOD_REGISTRY_ABI,
+        functionName: "challengeWindowSeconds",
+      })),
+    ])) as [bigint, bigint];
+  } catch {
+    // tolerate
+  }
 
   return NextResponse.json(
     {
@@ -149,6 +179,14 @@ export async function POST(req: Request): Promise<NextResponse> {
         weightedScoreScaled: Number(settlement.weightedScoreScaled),
         postedBy: settlement.postedBy,
         timestamp: Number(settlement.timestamp),
+        challengeDeadline: Number(settlement.challengeDeadline),
+        finalized: settlement.finalized,
+        challenged: settlement.challenged,
+        voided: settlement.voided,
+      },
+      security: {
+        minChallengeBond: minChallengeBond !== undefined ? minChallengeBond.toString() : null,
+        challengeWindowSeconds: challengeWindowSeconds !== undefined ? Number(challengeWindowSeconds) : null,
       },
     },
     { status: 200 }

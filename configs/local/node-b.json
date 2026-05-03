@@ -3,5 +3,9 @@
   "Peers": ["tls://127.0.0.1:9001"],
   "Listen": [],
   "api_port": 9012,
-  "tcp_port": 7000
+  "tcp_port": 7000,
+  "router_addr": "http://127.0.0.1",
+  "router_port": 9013,
+  "a2a_addr": "http://127.0.0.1",
+  "a2a_port": 9014
 }

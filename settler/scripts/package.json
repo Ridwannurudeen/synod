@@ -1,0 +1,17 @@
+{
+  "name": "synod-settler-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node shell scripts invoked by the Synod settler. Mirrors the existing 0G Storage shell-out pattern.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "infer": "node zerog_infer.mjs"
+  },
+  "dependencies": {
+    "@0glabs/0g-serving-broker": "0.7.4",
+    "ethers": "6.13.5"
+  }
+}

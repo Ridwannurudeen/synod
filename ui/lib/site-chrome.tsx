@@ -80,6 +80,7 @@ export function NavBar() {
           <span className="num hidden text-eyebrow font-normal uppercase tracking-[0.2em] text-ink-500 sm:inline">/0.1</span>
         </Link>
         <div className="ml-auto flex items-center gap-1">
+          <NavLink href="/dashboard" label="Dashboard" />
           <NavLink href="/gallery" label="Gallery" />
           <NavLink href="/network" label="Network" />
           <NavLink href="/verify" label="Verify" />
@@ -185,6 +186,7 @@ export function DeepFooter() {
         <FooterColumn
           title="Protocol"
           links={[
+            { label: "Dashboard", href: "/dashboard" },
             { label: "Gallery", href: "/gallery" },
             { label: "AXL mesh", href: "/network" },
             { label: "Verify a proof", href: "/verify" },
