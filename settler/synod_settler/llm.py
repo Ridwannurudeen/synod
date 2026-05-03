@@ -331,8 +331,14 @@ class ZerogProvider(LLMProvider):
                 f"stderr tail: {tail}"
             )
 
+        json_text = stdout
+        for line in reversed(stdout.splitlines()):
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                json_text = line
+                break
         try:
-            result = json.loads(stdout)
+            result = json.loads(json_text)
         except json.JSONDecodeError as e:
             raise RuntimeError(
                 f"zerog_infer.mjs stdout was not JSON: {e}\n"

@@ -166,7 +166,7 @@ The ENS team's blog post [*ENS as the AI Agent Identity Layer (with ERC-8004)*](
 ## Track 4 — 0G — Best Autonomous Agents, Swarms & iNFT Innovations ($7,500 pool, $1,500 each up to 5)
 
 ### Project name + short description
-**Vendor-diverse AI settler swarm — 4 settlers across 2 providers, ed25519-signed deliberations persisted verbatim to 0G Storage as the swarm's append-only shared memory, retrievable via pure HTTP.** No SDK, no auth, no key required for retrieval — anyone, any browser, any future verifier can pull a full deliberation transcript from `https://indexer-storage-testnet-turbo.0g.ai/file?root=0x...` and replay the swarm's reasoning chain. **175 KB+ of transcripts** persisted on 0G Storage Galileo during the hackathon, one per on-chain settlement (100+ events on Gensyn L2 chain 685689).
+**Vendor-diverse AI settler swarm — 4 settlers across 3 providers (Anthropic + Google + 0G Compute), ed25519-signed deliberations persisted verbatim to 0G Storage as the swarm's append-only shared memory, retrievable via pure HTTP.** Settler C now runs `0G Compute` via the `@0glabs/0g-serving-broker` SDK — TEE-attested inference on the 0G inference network, `attestation_verified: true` returned per call. No SDK, no auth, no key required for retrieval — anyone, any browser, any future verifier can pull a full deliberation transcript from `https://indexer-storage-testnet-turbo.0g.ai/file?root=0x...` and replay the swarm's reasoning chain. **175 KB+ of transcripts** persisted on 0G Storage Galileo during the hackathon, one per on-chain settlement (100+ events on Gensyn L2 chain 685689).
 
 ### Why a swarm — and how heterogeneity is real
 Synod is a 4-settler swarm running across **two physical VPS** (Frankfurt + Toronto) and **two AI providers + four model variants**:
@@ -263,6 +263,7 @@ and 0G Chain ERC-7857 iNFTs (settler identity).
 - **Gensyn L2** (chain 685689) — 100+ on-chain settlement records (canonical outcome, signed votes)
 - **0G Storage Galileo** — 175 KB+ of full deliberation transcripts, HTTP-retrievable
 - **0G Chain Galileo** (chain 16602) — 4 ERC-7857 iNFTs (token IDs 0–3), settler identity layer
+- **0G Compute** (chain 16602) — Settler C runs production TEE-attested inference via `@0glabs/0g-serving-broker`; on-chain ledger funded with 3 OG, `attestation_verified: true` per call
 - **0G Galileo testnet** (chain 16602) — v1.1 SynodRegistry with live slashing demo
 - **Ethereum mainnet ENS** — bootloader + agent subnames + transferable judgment NFTs
 - **83 tests across Python + Foundry + SDK** (37 Python protocol/identity/consensus/onchain/proof-verifier including v2 reasoning-hash binding and canonical-confidence regression; 37 Solidity Foundry including 256-run fuzz; 9 TypeScript SDK smoke tests against the live deployment)

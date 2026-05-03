@@ -288,6 +288,7 @@ async function main() {
     chat_id: chatId,
     attestation_verified: attestationVerified,
   });
+  process.exit(0);
 }
 
 main().catch((e) => {
