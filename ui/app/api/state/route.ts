@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 
 import { PRIMARY_AXL_API, SETTLER_LOG_FILES } from "@/lib/config";
 import { parseSettlerLogs } from "@/lib/log-parser";
+import { gatherNetworkState } from "@/lib/network";
 import { readOnchainState } from "@/lib/registry";
 import type {
   ConsensusView,
@@ -39,15 +40,52 @@ async function probePrimaryAxl(): Promise<{ pubkey?: string; online: boolean }> 
 }
 
 export async function GET(): Promise<NextResponse> {
-  const [parsed, primary] = await Promise.all([
+  const [parsed, primary, network] = await Promise.all([
     parseSettlerLogs(SETTLER_LOG_FILES),
     probePrimaryAxl(),
+    gatherNetworkState().catch(() => ({ nodes: [] as Array<{
+      spec: { name: string };
+      pubkey?: string;
+      registeredAxlPubKey?: string;
+      registeredModelTag?: string;
+      online: boolean;
+    }> })),
   ]);
 
-  // Merge primary AXL's online status into the SettlerView for that node, if
-  // we recognize it from log parsing. Otherwise add a placeholder so the UI
-  // shows it even before any deliberation runs.
-  const settlers: SettlerView[] = [...parsed.settlers];
+  // Build the deliberation card list from the registered swarm (4 settlers
+  // across both VPS) so the homepage always shows the full quorum, not just
+  // settlers whose logs live on the local box. Log-parsed vote data is
+  // overlaid on top — that's what shows ed25519 sigs / outcomes / model tags
+  // for the LIVE inference, while the network probe gives us the baseline
+  // identity + online status for nodes whose logs are on the other VPS.
+  const byPubkey = new Map<string, SettlerView>();
+  for (const node of network.nodes) {
+    const pk = node.pubkey || node.registeredAxlPubKey;
+    if (!pk) continue;
+    byPubkey.set(pk, {
+      pubkey: pk,
+      modelTag: node.registeredModelTag,
+      online: Boolean(node.online),
+      status: "idle",
+      lastUpdateMs: Date.now(),
+    });
+  }
+  for (const s of parsed.settlers) {
+    const existing = byPubkey.get(s.pubkey);
+    if (existing) {
+      // Overlay log-parsed live data; preserve registered modelTag if log
+      // parser didn't pick one up yet.
+      byPubkey.set(s.pubkey, {
+        ...existing,
+        ...s,
+        modelTag: s.modelTag ?? existing.modelTag,
+        online: s.online || existing.online,
+      });
+    } else {
+      byPubkey.set(s.pubkey, s);
+    }
+  }
+  const settlers: SettlerView[] = Array.from(byPubkey.values());
   if (primary.online && primary.pubkey) {
     const found = settlers.find((s) => s.pubkey === primary.pubkey);
     if (found) {
