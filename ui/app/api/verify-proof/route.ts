@@ -103,7 +103,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // Pull the settlement tuple
+  // Pull the settlement tuple. The deployed registry has the v1 7-field
+  // struct (no challenge/slashing fields). The UI tolerates the absence of
+  // those fields — they're rendered as "—" in the verifier card.
   let settlement: {
     questionId: Hex;
     outcome: number;
@@ -112,10 +114,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     signedVotesPayload: Hex;
     postedBy: Hex;
     timestamp: bigint;
-    challengeDeadline: bigint;
-    finalized: boolean;
-    challenged: boolean;
-    voided: boolean;
+    challengeDeadline?: bigint;
+    finalized?: boolean;
+    challenged?: boolean;
+    voided?: boolean;
   };
   try {
     const tuple = (await withRetry(() => client.readContract({
@@ -131,10 +133,6 @@ export async function POST(req: Request): Promise<NextResponse> {
       signedVotesPayload: Hex;
       postedBy: Hex;
       timestamp: bigint;
-      challengeDeadline: bigint;
-      finalized: boolean;
-      challenged: boolean;
-      voided: boolean;
     };
     settlement = tuple;
   } catch (e) {
@@ -179,10 +177,13 @@ export async function POST(req: Request): Promise<NextResponse> {
         weightedScoreScaled: Number(settlement.weightedScoreScaled),
         postedBy: settlement.postedBy,
         timestamp: Number(settlement.timestamp),
-        challengeDeadline: Number(settlement.challengeDeadline),
-        finalized: settlement.finalized,
-        challenged: settlement.challenged,
-        voided: settlement.voided,
+        challengeDeadline:
+          settlement.challengeDeadline !== undefined
+            ? Number(settlement.challengeDeadline)
+            : null,
+        finalized: settlement.finalized ?? null,
+        challenged: settlement.challenged ?? null,
+        voided: settlement.voided ?? null,
       },
       security: {
         minChallengeBond: minChallengeBond !== undefined ? minChallengeBond.toString() : null,
