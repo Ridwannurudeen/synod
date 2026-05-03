@@ -59,7 +59,11 @@ interface FormState {
 }
 
 const DEFAULT_FORM: FormState = {
-  prompt: "Will the Bitcoin price exceed $200,000 at any point in 2026?",
+  // Factual default. Per-outcome quorum (3-of-N for the *winning* outcome)
+  // means contested predictions can stall by design — that's the
+  // anti-prompt-injection feature, but it makes for a bad first-touch
+  // demo. Default to a question all four settlers reliably agree on.
+  prompt: "Was the Bitcoin genesis block mined on January 3, 2009? Vote 1 for yes, 0 for no.",
   outcomes: "0,1",
   deadlineSecs: 180,
 };
@@ -96,10 +100,14 @@ function getEthereum(): InjectedEthereum | null {
   return w.ethereum ?? null;
 }
 
+// Factual prompts settle 3-of-3 in seconds. Open-ended predictions like
+// "will Bitcoin exceed $200K in 2026?" are kept for the gallery (they
+// surface real settler disagreement, which is interesting on its own
+// but doesn't reach quorum on camera).
 const SAMPLE_PROMPTS = [
-  "Was the Bitcoin genesis block mined on January 3, 2009?",
-  "Will the Bitcoin price exceed $200,000 at any point in 2026?",
-  "Was the Ethereum Merge completed on September 15, 2022?",
+  "Was the Bitcoin genesis block mined on January 3, 2009? Vote 1 for yes, 0 for no.",
+  "Is the chemical symbol for sodium Na? Vote 1 for yes, 0 for no.",
+  "Does DNA stand for deoxyribonucleic acid? Vote 1 for yes, 0 for no.",
 ];
 
 type ProtocolStats = {
