@@ -25,6 +25,23 @@ import type {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// Hardcoded fallback model tags for the 4 known settlers. The on-chain
+// `settlers()` call sometimes returns null `registeredModelTag` under RPC
+// load — without a fallback, the deliberation cards flash "model: tbd"
+// during exactly the moments the user is most likely to be looking at the
+// page (right after inject). The mapping below is stable for the v1
+// deployment; replace with a dynamic registry lookup once we redeploy.
+const KNOWN_MODEL_TAGS: Record<string, string> = {
+  "752b498760a859332985f4d1edf6a630cd97615c0f1085c63e514736326c1cea":
+    "claude-sonnet-4-6",
+  "b52678486f667f176885421b48b06ff3569468e242839f32f6db9ebd1083fbc8":
+    "claude-haiku-4-5",
+  "dbc4cebd7a1bb7a4f9d06dd1ae9376807d4bc0d314b89839aef75e1988ed3648":
+    "zerog/qwen-2.5-7b-instruct",
+  "ab3a7aba135d3b24ef18f87e3115a5c4f853e9628e685e8671a3a53355db11c0":
+    "claude-opus-4-7",
+};
+
 async function probePrimaryAxl(): Promise<{ pubkey?: string; online: boolean }> {
   try {
     const res = await fetch(`${PRIMARY_AXL_API}/topology`, {
@@ -64,25 +81,39 @@ export async function GET(): Promise<NextResponse> {
     if (!pk) continue;
     byPubkey.set(pk, {
       pubkey: pk,
-      modelTag: node.registeredModelTag,
+      modelTag: node.registeredModelTag || KNOWN_MODEL_TAGS[pk],
       online: Boolean(node.online),
       status: "idle",
       lastUpdateMs: Date.now(),
     });
   }
+  // Belt-and-braces: ensure the 4 known settlers always appear, even when
+  // gatherNetworkState() returns empty (RPC flap, ENS read failure, etc.).
+  for (const [pk, modelTag] of Object.entries(KNOWN_MODEL_TAGS)) {
+    if (!byPubkey.has(pk)) {
+      byPubkey.set(pk, {
+        pubkey: pk,
+        modelTag,
+        online: false,
+        status: "idle",
+        lastUpdateMs: Date.now(),
+      });
+    }
+  }
   for (const s of parsed.settlers) {
     const existing = byPubkey.get(s.pubkey);
     if (existing) {
-      // Overlay log-parsed live data; preserve registered modelTag if log
-      // parser didn't pick one up yet.
       byPubkey.set(s.pubkey, {
         ...existing,
         ...s,
-        modelTag: s.modelTag ?? existing.modelTag,
+        modelTag: s.modelTag || existing.modelTag || KNOWN_MODEL_TAGS[s.pubkey],
         online: s.online || existing.online,
       });
     } else {
-      byPubkey.set(s.pubkey, s);
+      byPubkey.set(s.pubkey, {
+        ...s,
+        modelTag: s.modelTag || KNOWN_MODEL_TAGS[s.pubkey],
+      });
     }
   }
   const settlers: SettlerView[] = Array.from(byPubkey.values());

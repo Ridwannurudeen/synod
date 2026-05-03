@@ -166,7 +166,26 @@ export async function parseSettlerLogs(
   // entirely. 16KB of head reliably captures the startup banner.
   const HEAD_BYTES = 16 * 1024;
 
-  for (const { path: p } of logPaths) {
+  // Filename -> pubkey fallback. Long-running logs grow past the head/tail
+  // window, rolling the "settler running pubkey=…" line out of view; without
+  // a fallback the parser drops the settler entirely. Map by log basename so
+  // we never lose a settler card even on a many-hour-old log file.
+  const PUBKEY_BY_LOG_NAME: Record<string, string> = {
+    "synod-settler-a.log":
+      "752b498760a859332985f4d1edf6a630cd97615c0f1085c63e514736326c1cea",
+    "synod-settler-b.log":
+      "b52678486f667f176885421b48b06ff3569468e242839f32f6db9ebd1083fbc8",
+    "synod-settler-c.log":
+      "dbc4cebd7a1bb7a4f9d06dd1ae9376807d4bc0d314b89839aef75e1988ed3648",
+    "settler-a.log":
+      "752b498760a859332985f4d1edf6a630cd97615c0f1085c63e514736326c1cea",
+    "settler-b.log":
+      "b52678486f667f176885421b48b06ff3569468e242839f32f6db9ebd1083fbc8",
+    "settler-c.log":
+      "dbc4cebd7a1bb7a4f9d06dd1ae9376807d4bc0d314b89839aef75e1988ed3648",
+  };
+
+  for (const { path: p, name } of logPaths) {
     let text: string;
     try {
       const resolved = path.resolve(/*turbopackIgnore: true*/ p);
@@ -195,6 +214,9 @@ export async function parseSettlerLogs(
       continue;
     }
     const ev = parseSingleLog(text);
+    if (!ev.pubkey) {
+      ev.pubkey = PUBKEY_BY_LOG_NAME[name];
+    }
     if (!ev.pubkey) continue;
 
     settlers.push({
