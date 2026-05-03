@@ -10,6 +10,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { getAddress } from "viem";
+
 import type {
   DeliberationState,
   InjectQuestionResponse,
@@ -1374,23 +1376,31 @@ export default function HomePage() {
         // If a wallet is connected, sign an owner-declaration and pass it
         // through. The server reconstructs the message and verifies via
         // viem.verifyMessage; the resulting judgment subname will mint to
-        // this wallet instead of the operator. If the user rejects the
-        // signature prompt we abort the inject — they explicitly opted in.
+        // this wallet instead of the operator.
+        //
+        // Address must be EIP-55 checksummed everywhere the message is
+        // built (client buildOwnerDeclaration, server buildSubmitterMessage,
+        // server verifySubmitter's reconstruction). MetaMask/Rabby return
+        // a lowercase address from eth_requestAccounts; the server uses
+        // viem.getAddress to checksum on its side. Without checksumming
+        // here the byte sequence differs and the server rejects with
+        // "submitter.message does not match canonical owner-declaration".
         let submitter: { address: string; signature: string; message: string } | undefined;
         if (wallet) {
           const eth = getEthereum();
           if (!eth) throw new Error("wallet disappeared between connect and sign");
+          const checksummed = getAddress(wallet);
           const issuedAtIso = new Date().toISOString();
           const message = buildOwnerDeclaration({
-            address: wallet,
+            address: checksummed,
             prompt: form.prompt,
             issuedAtIso,
           });
           const signature = (await eth.request({
             method: "personal_sign",
-            params: [message, wallet],
+            params: [message, checksummed],
           })) as string;
-          submitter = { address: wallet, signature, message };
+          submitter = { address: checksummed, signature, message };
         }
 
         const res = await fetch("/api/inject", {
