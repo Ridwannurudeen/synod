@@ -251,7 +251,7 @@ We chose to ship a tight, honest hackathon v1 instead of an overclaimed "product
 | Concern | v1 (shipped) | v1.1 (designed, not shipped) |
 |---|---|---|
 | Quorum/arithmetic enforcement | **Off-chain.** `SynodRegistry.recordSettlement` accepts the signed-vote bundle from any registered settler with bond and stores bytes verbatim. The challenge window + slashable bond (`onlySettler`, `minSettlerBond`, `challengeWindowSeconds`) deters fraud economically. | EIP-712 signature aggregation enforced on-chain; per-outcome quorum + winner arithmetic checked in `recordSettlement` |
-| Reasoning text in receipts | Vote outcome + confidence + question domain are signed (ed25519). Reasoning text is recorded but **not part of the signing domain in v1** — see `protocol.py:142`. v2 protocol on `main` includes a `reasoning_hash` field; live demo runs v1. | Reasoning bound by signed `reasoning_hash` (Protocol v2 — code shipped to `main`, deployment v1.1) |
+| Reasoning text in receipts | **Shipped today (Protocol v2):** vote outcome + confidence + question domain + `reasoning_hash` are all bound into the ed25519 signing payload. The displayed reasoning text must hash to the signed `reasoning_hash` or the verifier rejects. Verifiable on transcript root `0x9272c61b5a77bd94…7b7b924` (qid `0x67b3d126…1b069`): `protocol_version: 2`, `reasoning_hash` present and matches `sha256(reasoning)` byte-for-byte. v1 historical settlements (pre-today) remain valid under the v1 verification path. | (closed — v2 live) |
 | Verification durability | Verifier reads **current** registry state (`registeredAxlPubKeys`). A revoked or rotated settler invalidates old receipts. | Block-height-pinned verification using `eth_getLogs(SettlerRegistered)` + receipt's settlement block |
 | Judgment subname ownership | **Shipped (May 2 2026):** wallet-connect on the inject form → SIWE-style signed owner-declaration → server verifies via `viem.verifyMessage` → mint pipeline issues 3 txs (mint as deployer, set records, `safeTransferFrom` to submitter). Verifiable: `j-67b3d12.synodai.eth`'s `NameWrapper.ownerOf` is the submitter wallet, not the operator. | (closed) |
 | Provider heterogeneity | Three models: `claude-sonnet-4-6`, `claude-haiku-4-5`, `gemini-2.5-flash`, plus `claude-opus-4-7` cross-machine. **Two providers** (Anthropic + Google). All settlers use the same SYSTEM_PROMPT — heterogeneity is on the *vendor/model axis*, not the *role axis*. | Specialised analyst/skeptic/synthesizer prompts per role |
@@ -282,6 +282,19 @@ curl -s 'https://indexer-storage-testnet-turbo.0g.ai/file?root=0x168964fb7685734
 
 # 6. iNFT contract on 0G Galileo (chain 16602) — 4 settler iNFTs, 1 transfer
 # https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85
+
+# 7. Tamper demo — show the verifier rejecting a forged proof. Run the
+# CLI verifier against the same on-chain settlement, then mutate one
+# byte of the signed-votes payload locally and re-verify. Result:
+# `signature does not match` for the tampered byte; the on-chain
+# canonical bytes still verify untouched.
+cd settler && python tools/verify_settlement.py \
+  --rpc-url https://gensyn-mainnet.g.alchemy.com/public \
+  --registry-address 0xD387f749667590940d7c68CA350e57FbcE62b6ad \
+  --question-id 67b3d126ba9213433f6c4d268946b00d91cb608b5bffdcf5d1e59f37b141b069
+# 'verified'  (3 valid signatures, on-chain quorum matches recomputed quorum)
+# Modify any single byte of the on-chain payload off-chain and re-run:
+# 'invalid: ed25519 signature is invalid for {pubkey}'
 ```
 
 ### Pitch differentiation — closest past winners and our distinct angle

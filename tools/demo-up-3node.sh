@@ -154,12 +154,17 @@ if [[ -f axl/axl-node.exe ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node.exe"
 elif [[ -f axl/axl-node ]]; then AXL_BIN="${ROOT_DIR}/axl/axl-node"
 else echo "axl binary missing; build Gensyn AXL first"; exit 1; fi
 
+# Defaults match the live deployment — Anthropic Sonnet/Haiku + Google
+# Gemini — so a judge running this from a fresh clone with just an
+# ANTHROPIC_API_KEY and a GOOGLE_API_KEY can reproduce the demo. To swap
+# B in for an OpenAI provider, export SYNOD_DEMO_B_PROVIDER=openai
+# SYNOD_DEMO_B_MODEL=gpt-4o before running.
 PROVIDER_A="${SYNOD_DEMO_A_PROVIDER:-anthropic}"
 MODEL_A="${SYNOD_DEMO_A_MODEL:-claude-sonnet-4-6}"
-PROVIDER_B="${SYNOD_DEMO_B_PROVIDER:-openai}"
-MODEL_B="${SYNOD_DEMO_B_MODEL:-gpt-4o}"
+PROVIDER_B="${SYNOD_DEMO_B_PROVIDER:-anthropic}"
+MODEL_B="${SYNOD_DEMO_B_MODEL:-claude-haiku-4-5}"
 PROVIDER_C="${SYNOD_DEMO_C_PROVIDER:-gemini}"
-MODEL_C="${SYNOD_DEMO_C_MODEL:-gemini-2.0-flash}"
+MODEL_C="${SYNOD_DEMO_C_MODEL:-gemini-2.5-flash}"
 QUORUM="${SYNOD_DEMO_QUORUM:-2}"
 
 require_provider_key "${PROVIDER_A}"

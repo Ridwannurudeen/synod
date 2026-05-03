@@ -94,8 +94,8 @@ Returns the full composed profile: ENS resolution + on-chain registry tuple + li
 ### What's novel here (vs. agent-state-in-text-records prior art)
 Past Open Agents winners have used ENS text records as agent state stores (mood, balance, tool list, memory). Synod's contribution is complementary, not derivative: ENS as the *deploy-time wiring* of a multi-agent swarm. One name to bootstrap a registry, an RPC, a chain id, a quorum threshold, and the canonical settler set — then the runtime cross-checks each settler's claimed pubkey against both the on-chain registry and the live AXL daemon. Three sources of truth, one ENS root.
 
-### Functional, no hard-coded values
-The /network page reads everything via `viem` from on-chain ENS records. The settler list is enumerated from subnames; the registry is loaded from a parent text record. There are zero hard-coded addresses on the page.
+### Functional, no hard-coded protocol parameters
+The /network page reads the registry contract address, RPC URL, chain id, quorum threshold, and per-settler EVM addresses + ed25519 pubkeys + roles **all via `viem` from on-chain ENS records on Ethereum mainnet** — there are zero hard-coded *protocol parameters* on the page. (For full transparency: the labels of the four expected subnames and the local AXL daemon URL map are static client-side constants in `ui/lib/ens.ts` and `ui/lib/network.ts`. Those are infrastructure pointers — *where* to find each daemon — not protocol parameters. Replacing the static map with a fully-dynamic registry-driven discovery is on the v1.1 roadmap.)
 
 ---
 
