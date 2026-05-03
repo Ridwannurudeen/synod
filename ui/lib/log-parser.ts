@@ -150,11 +150,14 @@ export async function parseSettlerLogs(
   let consensus: ConsensusView | null = null;
   let onchainTxHash: string | undefined;
 
-  // Bound how much of each log file we parse on every poll. Settler logs grow
-  // ~10MB/hour and parsing the full file takes seconds — long enough to make
-  // /api/state hang the homepage's 2s polling and silently OOM the UI.
-  // 256KB of tail covers the last few hundred events comfortably.
-  const TAIL_BYTES = 256 * 1024;
+  // Bound how much of each log file we parse on every poll. Settler logs are
+  // dominated by ~4 lines/sec of httpx INFO `GET /recv 204 No Content`
+  // polling output, so we need a generous tail to catch the real events
+  // (inference / vote / propagate / consensus / onchain) buried among them.
+  // At ~150 bytes/line, 4MB ≈ ~2 hours of activity — well past any single
+  // demo session. Reading 4MB at the kernel level is fast (~10ms);
+  // parsing it stays under 200ms which keeps /api/state under 1s.
+  const TAIL_BYTES = 4 * 1024 * 1024;
 
   for (const { path: p } of logPaths) {
     let text: string;
