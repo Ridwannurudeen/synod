@@ -152,12 +152,11 @@ export async function parseSettlerLogs(
 
   // Bound how much of each log file we parse on every poll. Settler logs are
   // dominated by ~4 lines/sec of httpx INFO `GET /recv 204 No Content`
-  // polling output, so we need a generous tail to catch the real events
-  // (inference / vote / propagate / consensus / onchain) buried among them.
-  // At ~150 bytes/line, 4MB ≈ ~2 hours of activity — well past any single
-  // demo session. Reading 4MB at the kernel level is fast (~10ms);
-  // parsing it stays under 200ms which keeps /api/state under 1s.
-  const TAIL_BYTES = 4 * 1024 * 1024;
+  // polling output. At ~150 bytes/line, 1MB ≈ ~30 minutes of activity —
+  // covers any single demo session. Three concurrent /api/state callers
+  // means ~12 MB/s of regex work, which is comfortable on a contended
+  // VPS where neighbour processes can saturate the load average.
+  const TAIL_BYTES = 1 * 1024 * 1024;
 
   for (const { path: p } of logPaths) {
     let text: string;

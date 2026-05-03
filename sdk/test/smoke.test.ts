@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 
 import { SynodClient, DEFAULT_BASE_URL, SynodAPIError } from "../src/index.js";
 
-const synod = new SynodClient({ timeoutMs: 8000 });
+// 20s tolerates load on the live VPS (settler log parsing dominates one core
+// when several cards are open at once). Smoke tests still fail fast on real
+// breakage.
+const synod = new SynodClient({ timeoutMs: 20_000 });
 
 async function liveOnline(): Promise<boolean> {
   try {
