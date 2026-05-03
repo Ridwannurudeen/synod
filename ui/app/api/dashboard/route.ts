@@ -32,10 +32,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const DASHBOARD_CACHE_TTL_MS = 60_000;
-// Pin to a known-recent block so getLogs doesn't scan the entire chain history
-// on every cold cache miss. Override via SYNOD_DASHBOARD_FROM_BLOCK.
+// Pin to a block well before the registry's first settlement so getLogs
+// doesn't scan the entire chain history on every cold cache miss. Gensyn L2
+// is young (~10M blocks total as of 2026-05) and our first settlement was
+// around block 9.4M; 9M is a safe lower bound that captures every event
+// without bringing in years of unrelated chain history. Override via
+// SYNOD_DASHBOARD_FROM_BLOCK.
 const DEFAULT_FROM_BLOCK = BigInt(
-  process.env.SYNOD_DASHBOARD_FROM_BLOCK ?? "20000000",
+  process.env.SYNOD_DASHBOARD_FROM_BLOCK ?? "9000000",
 );
 // Single-flight guard so N concurrent cold-cache hits trigger ONE RPC scan,
 // not N — closes the dashboard-cache-stampede vector flagged in audit M1.
