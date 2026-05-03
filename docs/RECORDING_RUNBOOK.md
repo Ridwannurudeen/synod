@@ -4,6 +4,8 @@ Companion to `DEMO_THEATER.md`. This is the *physical recording session* checkli
 
 Target: **2:30 master cut, 720p+, real voice, no music bed.**
 
+**Hard cap: 2:50.** ETHGlobal's general rule is ≤4:00, but **0G's prize qualification explicitly states "keep the video under 3 mins!"** A 2:50 cap leaves a 10-second buffer below 0G's limit and stays well below ETHGlobal's. If a take runs past 2:50, re-cut — do not submit a >3:00 video to the 0G track.
+
 Recorder: **the human builder.** I cannot do this — ETHGlobal explicitly disallows AI voiceover.
 
 ---

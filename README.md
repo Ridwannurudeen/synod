@@ -79,7 +79,7 @@ The registry anchors the full bundle of signed votes as raw bytes and exposes re
               ▼                          ▼                            ▼
    ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
    │  Settler A       │    │  Settler B       │    │  Settler N       │
-   │  Claude Sonnet   │    │  GPT-4o          │    │  Llama 3 70B     │
+   │  Sonnet 4.6      │    │  Haiku 4.5       │    │  Gemini / Opus   │
    │  AXL ed25519 id  │    │  AXL ed25519 id  │    │  AXL ed25519 id  │
    │  EVM signer      │    │  EVM signer      │    │  EVM signer      │
    └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘
@@ -122,7 +122,7 @@ The registry anchors the full bundle of signed votes as raw bytes and exposes re
 - ✅ Live deliberation viewer (Next.js)
 - ✅ One-command demo orchestrator
 - ✅ Independent CLI proof verifier (`settler/tools/verify_settlement.py`)
-- ✅ **71 tests green** (34 Python protocol/identity/consensus/on-chain/proof-verifier tests + 37 Solidity Foundry incl. 256-run fuzz)
+- ✅ **83 tests green** (37 Python protocol/identity/consensus/on-chain/proof-verifier tests including v2 reasoning-hash binding and canonical-confidence regression + 37 Solidity Foundry incl. 256-run fuzz + 9 TypeScript SDK smoke tests against the live deployment)
 
 ## Quick start
 
@@ -148,10 +148,13 @@ bash scripts/axl-keygen.sh node-b
 bash tools/demo-up.sh
 ```
 
-### Three-provider judge demo
+### Three-vendor local judge demo (optional)
 
-For the strongest hackathon presentation, run three AXL nodes with three model
-providers. Add these to `settler/.env`:
+This local-runner path is **distinct from the live deployment**. The live
+swarm at `synod.gudman.xyz` runs **two providers across four model variants**
+(Anthropic Sonnet 4.6 / Haiku 4.5 / Opus 4.7 cross-machine, Google Gemini 2.5
+Flash). The optional 3-vendor local demo below adds OpenAI for breadth when
+running locally with your own keys. Add these to `settler/.env`:
 
 ```bash
 ANTHROPIC_API_KEY=...
@@ -206,7 +209,7 @@ python tools/verify_settlement.py \
 | Criterion | What Synod brings |
 |---|---|
 | **Technicality** | Multi-LLM consensus protocol; ed25519-signed canonical-JSON vote payloads bound to prompt/outcomes/deadline; P2P over Yggdrasil mesh; on-chain proof anchor; server-side and CLI proof verifiers; deterministic designated-poster algorithm |
-| **Originality** | First decentralized AI settlement service. The category does not exist yet — Polymarket has UMA, Augur has REP, Delphi had nothing |
+| **Originality** | First AXL-native AI settler swarm shipped against the Open Agents brief. Polymarket has UMA, Augur has REP, Delphi had nothing — Synod fills the AI-native gap with cryptographically signed deliberations, ENS-addressable receipts, and 0G-anchored transcripts |
 | **Practicality** | Solves Delphi's actual #1 architectural weakness in week-one of mainnet. Reference implementation Gensyn could integrate as Delphi v2's settler architecture |
 | **Usability (UI/UX/DX)** | Live deliberation viewer; one-command demo orchestrator; gitignored env template; ` forge test` + `pytest` round-trip in seconds |
 | **WOW factor** | Watch heterogeneous AI models on independent machines reach quorum-gated agreement, see the on-chain transaction hash, then watch the UI independently verify every signature in the proof |
@@ -255,6 +258,41 @@ We chose to ship a tight, honest hackathon v1 instead of an overclaimed "product
 | ERC-7857 verifier | Stub `IERC7857DataVerifier` returns `isValid=true`. Mint and transfer flows are real on 0G Galileo (4 tokens minted, 1 transferred). | Real TEE attestation + sealed-key encryption pipeline |
 | Stats source | `/api/stats.questionsSettled` reads the local 0G transcript index, not the chain (no `settledCount()` view in v1 contract). On-chain `eth_getLogs` is the canonical source. | Stats endpoint switches to `eth_getLogs(SettlementRecorded)` |
 | AXL mesh edge claims | `/network` infers full edges from any peer presence; doesn't correlate exact pubkey both ways. Visual aid, not cryptographic proof. | Pairwise pubkey verification across `/topology` |
+
+### Live receipts you can verify in 30 seconds
+
+```bash
+# 1. ENS bootloader (Ethereum mainnet) — registry + RPC + threshold + 4 settler subnames
+curl -s https://synod.gudman.xyz/api/ens | jq '{source, parent, subnames: (.subnames | length)}'
+
+# 2. Live AXL mesh + 4 settlers verified across two physical VPS
+curl -s https://synod.gudman.xyz/api/network | jq '.nodes[] | {name: .spec.name, online, registered, ensOK: .pubkeyMatchesEns}'
+
+# 3. Recompute a v2-signed-vote proof end-to-end (quorum=3, three signature-valid voters, ed25519 + reasoning_hash bound)
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"questionId":"0x67b3d126ba9213433f6c4d268946b00d91cb608b5bffdcf5d1e59f37b141b069"}' \
+  https://synod.gudman.xyz/api/verify-proof | jq '{status, votes: (.votes | length)}'
+
+# 4. Resolve a submitter-owned judgment subname via standard ENS tooling — owner is NOT the operator
+cast resolve-name j-67b3d12.synodai.eth     # or use https://app.ens.domains/j-67b3d12.synodai.eth
+# NameWrapper.ownerOf(uint256(namehash("j-67b3d12.synodai.eth"))) returns 0x81Ef2F237Cf51aa8c4b1FFd3062046e651be39f0
+
+# 5. Pull a full deliberation transcript from 0G Storage by HTTP — no SDK, no auth
+curl -s 'https://indexer-storage-testnet-turbo.0g.ai/file?root=0x168964fb768573420c8bd434c5f6a5216e334a60515b53bd3f6f12e74a4f3775' | jq '.votes | length'
+
+# 6. iNFT contract on 0G Galileo (chain 16602) — 4 settler iNFTs, 1 transfer
+# https://chainscan-galileo.0g.ai/address/0x4fF6712B364A06f4f23878dE3c4678E8F48f2D85
+```
+
+### Pitch differentiation — closest past winners and our distinct angle
+
+| Closest past winner | What they did | Synod's distinct angle |
+|---|---|---|
+| **Ghost in the Machine** (ENS Best Integration 1st, Cannes 2026) | 30+ ENS text records per agent encoding *agent runtime state* — mood, balance, memory, tools, conversation history. Each agent is a subdomain. | Synod stores *protocol bootloader config* in ENS — registry contract, RPC URL, chain id, threshold, settler list — so the live app cold-boots from one ENS name (`synodai.eth`). Different layer of the stack. We can also flip a text record on mainnet and watch the live UI swing — verified today by changing `synod.threshold` from 2 to 3. |
+| **VEIL VPN** (ENS Most Creative 1st, Cannes 2026) | TEE attestation + ENS for service discovery — attested VPN nodes register under `veil.eth`. | Synod uses ENS as a **receipt** primitive: every settled question becomes a transferable, ENS-addressable NFT (`j-{hash}.synodai.eth`) carrying outcome + transcript-CID + tx-hash in 8 text records. Owned by the verified submitter wallet (live: `j-67b3d12.synodai.eth` → `0x81Ef…39f0`, not the operator). Nobody in the past 6 years has shipped AI-verdict-as-ENS-subname. |
+| **DIVE** (0G Best OpenClaw 2nd, Cannes 2026) | AI swarm + World ID Sybil resistance + 0G Compute TEE inference + iNFTs as agent identity for prediction-market resolution. | Synod's swarm runs on Gensyn AXL (not WS/HTTP), votes are **ed25519-signed with reasoning_hash bound to the signature** (DIVE doesn't bind reasoning), and settlements anchor on Gensyn L2 mainnet. Uses 0G Storage as append-only shared memory rather than 0G Compute for inference. |
+| **Alpha Dawg** (0G DeFi 2nd, Cannes 2026) | 14-agent multi-chain swarm with 0G Compute TEE, iNFT memory loops, Hedera audit log, Arc payments. | Different scope: Alpha Dawg is a trading product. Synod is settlement-layer infrastructure. Both are swarms but ours produces **portable, third-party-verifiable receipts** rather than internal memory for one user's account. |
+| **Shawarma Orchestrate** (0G DeFi 1st, Cannes 2026) | LangGraph supervisor swarm + 0G Compute + Uniswap + Telegram. Configurable agent prompts. | Shawarma's consensus layer is *unsigned* weighted votes inside one process. Synod's consensus is **cryptographically signed across separate machines** — A in Frankfurt, D in Toronto, peer-to-peer over AXL — and replayable from on-chain bytes alone. |
 
 **Why this matters:** every claim above is in the SUBMISSIONS doc and the README. We'd rather under-claim now than get caught by a sharp judge later. The v1.1 list **is the post-hackathon roadmap** for the Gensyn Foundation grant.
 
