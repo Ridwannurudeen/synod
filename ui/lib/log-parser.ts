@@ -68,6 +68,22 @@ function parseSingleLog(text: string): LogEvents {
 
     m = line.match(/question ([0-9a-f]+) outcomes=([0-9,\-]+) prompt=(.+)$/);
     if (m) {
+      // New question — clear stale per-question state from the prior cycle.
+      // Without this, an old CONSENSUS line continues to populate
+      // consensusOutcome/Quorum/WeightedScore on the ev object after a new
+      // question arrives, and the API surfaces (newQid, oldConsensus) — a
+      // false "quorum reached" for a question that's just been received.
+      if (ev.questionId !== m[1]) {
+        ev.consensusOutcome = undefined;
+        ev.consensusQuorum = undefined;
+        ev.consensusWeightedScore = undefined;
+        ev.consensusReachedAtMs = undefined;
+        ev.votedOutcome = undefined;
+        ev.votedConfidence = undefined;
+        ev.onchainTxHash = undefined;
+        ev.outcomes = undefined;
+        ev.prompt = undefined;
+      }
       ev.status = "received";
       ev.questionId = m[1];
       ev.outcomes = m[2]
@@ -81,6 +97,16 @@ function parseSingleLog(text: string): LogEvents {
 
     m = line.match(/question ([0-9a-f]+) prompt=(.+)$/);
     if (m) {
+      if (ev.questionId !== m[1]) {
+        ev.consensusOutcome = undefined;
+        ev.consensusQuorum = undefined;
+        ev.consensusWeightedScore = undefined;
+        ev.consensusReachedAtMs = undefined;
+        ev.votedOutcome = undefined;
+        ev.votedConfidence = undefined;
+        ev.onchainTxHash = undefined;
+        ev.outcomes = undefined;
+      }
       ev.status = "received";
       ev.questionId = m[1];
       ev.prompt = m[2];
@@ -92,6 +118,16 @@ function parseSingleLog(text: string): LogEvents {
       /inference q=([0-9a-f]+) outcome=(-?\d+) confidence=([\d.]+) model=(\S+)/
     );
     if (m) {
+      if (ev.questionId !== m[1]) {
+        // Inference line for a question we haven't seen the "question …
+        // prompt=" line for yet. Still treat as a question boundary so
+        // stale consensus from prior cycles doesn't leak.
+        ev.consensusOutcome = undefined;
+        ev.consensusQuorum = undefined;
+        ev.consensusWeightedScore = undefined;
+        ev.consensusReachedAtMs = undefined;
+        ev.onchainTxHash = undefined;
+      }
       ev.status = "voted";
       ev.questionId = m[1];
       ev.votedOutcome = Number(m[2]);
@@ -136,6 +172,10 @@ export interface ParsedLogs {
   settlers: SettlerView[];
   consensus: ConsensusView | null;
   onchainTxHash?: string;
+  /** Cross-settler accepted-vote map keyed by 16-char pubkey prefix.
+   *  Lets callers overlay votes onto settlers whose own log files
+   *  weren't parsed (e.g. settlers running on a different VPS). */
+  acceptedVotesByPubkeyPrefix?: Record<string, { outcome: number; questionId: string }>;
 }
 
 /**
@@ -185,6 +225,21 @@ export async function parseSettlerLogs(
       "dbc4cebd7a1bb7a4f9d06dd1ae9376807d4bc0d314b89839aef75e1988ed3648",
   };
 
+  // Cross-settler vote map. Collect EVERY accepted-vote line across ALL
+  // log files with its timestamp; pick the qid with the newest timestamp
+  // at the end and emit only that qid's votes. Order of file iteration
+  // does not affect correctness (earlier code's `clear()` on qid change
+  // was order-fragile — log B revisiting an older qid would wipe log A's
+  // newest-qid entries).
+  type RawVote = {
+    qid: string;
+    settlerPfx: string;
+    outcome: number;
+    ts: number;
+  };
+  const allRawVotes: RawVote[] = [];
+  const VOTE_RE = /accepted vote q=([0-9a-f]+) settler=([0-9a-f]+) outcome=(-?\d+)/;
+
   for (const { path: p, name } of logPaths) {
     let text: string;
     try {
@@ -213,6 +268,20 @@ export async function parseSettlerLogs(
     } catch {
       continue;
     }
+    // Scan for "accepted vote q=… settler=PFX outcome=N" — gives us votes
+    // for settlers whose own logs aren't local. Collect with timestamps
+    // for global "newest qid wins" resolution after all files processed.
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(VOTE_RE);
+      if (!m) continue;
+      allRawVotes.push({
+        qid: m[1],
+        settlerPfx: m[2],
+        outcome: Number(m[3]),
+        ts: parseTimestampMs(line),
+      });
+    }
+
     const ev = parseSingleLog(text);
     if (!ev.pubkey) {
       ev.pubkey = PUBKEY_BY_LOG_NAME[name];
@@ -266,5 +335,43 @@ export async function parseSettlerLogs(
     }
   }
 
-  return { settlers, consensus, onchainTxHash };
+  // Find the newest-timestamp qid across all collected votes — that's the
+  // "current" question regardless of file iteration order.
+  let newestQid: string | undefined;
+  let newestTs = 0;
+  const qidNewestTs = new Map<string, number>();
+  for (const v of allRawVotes) {
+    const prev = qidNewestTs.get(v.qid) ?? 0;
+    if (v.ts > prev) qidNewestTs.set(v.qid, v.ts);
+  }
+  for (const [qid, ts] of qidNewestTs.entries()) {
+    if (ts > newestTs) {
+      newestTs = ts;
+      newestQid = qid;
+    }
+  }
+  // Build the final map for ONLY the newest qid.
+  const acceptedVotesByPubkeyPrefix: Record<string, { outcome: number; questionId: string }> = {};
+  if (newestQid) {
+    for (const v of allRawVotes) {
+      if (v.qid !== newestQid) continue;
+      acceptedVotesByPubkeyPrefix[v.settlerPfx] = {
+        outcome: v.outcome,
+        questionId: v.qid,
+      };
+    }
+  }
+
+  // Overlay onto local-log settlers whose own inference line wasn't picked up.
+  for (const s of settlers) {
+    if (s.votedOutcome !== undefined) continue;
+    const pfx = s.pubkey.slice(0, 16);
+    const v = acceptedVotesByPubkeyPrefix[pfx];
+    if (v) {
+      s.votedOutcome = v.outcome;
+      s.status = "voted";
+    }
+  }
+
+  return { settlers, consensus, onchainTxHash, acceptedVotesByPubkeyPrefix };
 }

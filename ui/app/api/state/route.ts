@@ -116,6 +116,25 @@ export async function GET(): Promise<NextResponse> {
       });
     }
   }
+
+  // Cross-settler vote overlay: when a settler's logs aren't local
+  // (e.g. settler-d on the Toronto VPS), the "accepted vote" line in
+  // another settler's log still tells us how they voted. Apply that
+  // overlay to any settler card that doesn't yet have a votedOutcome.
+  const xVotes = parsed.acceptedVotesByPubkeyPrefix || {};
+  for (const [pk, view] of byPubkey.entries()) {
+    if (view.votedOutcome !== undefined) continue;
+    const pfx = pk.slice(0, 16);
+    const v = xVotes[pfx];
+    if (v) {
+      byPubkey.set(pk, {
+        ...view,
+        votedOutcome: v.outcome,
+        status: "voted",
+      });
+    }
+  }
+
   const settlers: SettlerView[] = Array.from(byPubkey.values());
   if (primary.online && primary.pubkey) {
     const found = settlers.find((s) => s.pubkey === primary.pubkey);
